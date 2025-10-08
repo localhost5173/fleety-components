@@ -207,7 +207,7 @@
 
 	// Component props
 	export let theme: 'fleety' | 'material' | 'midnight' = 'fleety';
-	export let dockPosition: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' = 'bottom-right';
+	export let dockPosition: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' = 'bottom-left';
 
 	// UI State
 	let isOpen = false;
