@@ -3,8 +3,8 @@
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
 	import MessageContent from './MessageContent.svelte';
+	const FLEETY_PROJECT_ID = import.meta.env.VITE_FLEETY_PROJECT_ID;
 
-    const FLEETY_PROJECT_ID = import.meta.env.VITE_FLEETY_PROJECT_ID;
 	// Fleety API Configuration
 	const API_URL = 'https://api.fleety.dev/api';
 	
@@ -24,6 +24,9 @@
 	type DockPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
 	type Theme = 'fleety' | 'material' | 'midnight';
 	
+	export let dockPosition: DockPosition = 'bottom-right';
+	export let theme: Theme = 'fleety';
+	
 	let isOpen = false;
 	let messages: Array<{ id: string; text: string; isUser: boolean; timestamp: Date }> = [];
 	let currentMessage = '';
@@ -37,8 +40,6 @@
 	let maxWidth = 500;
 	let minHeight = 400;
 	let maxHeight = 700;
-	let dockPosition: DockPosition = 'bottom-right'; // bottom-right | bottom-left | top-right | top-left
-	let theme: Theme = 'fleety'; // fleety | midnight | material
 
 	// Theme configurations
 	const themes = {

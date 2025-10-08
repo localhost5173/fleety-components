@@ -4,11 +4,11 @@
 
 	// API Configuration
 	const API_URL = 'https://api.fleety.dev/api';
+	const FLEETY_PROJECT_ID = import.meta.env.VITE_FLEETY_PROJECT_ID;
 
 	interface Ticket {
 		id: string;
 		slug: string;
-		project_id: string;
 		title: string;
 		description: string;
 		status: 'open' | 'in_progress' | 'resolved' | 'closed';
@@ -204,9 +204,6 @@
 			throw new Error(result.error || 'Failed to mark messages as read');
 		}
 	}
-
-	// Fleety Project Configuration
-	const FLEETY_PROJECT_ID = import.meta.env.VITE_FLEETY_PROJECT_ID;
 
 	// Component props
 	export let theme: 'fleety' | 'material' | 'midnight' = 'fleety';
