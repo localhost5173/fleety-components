@@ -19,7 +19,7 @@
 	type Theme = 'fleety' | 'material' | 'midnight';
 
 	// Fleety API Configuration
-	const API_URL = import.meta.env.VITE_BACKEND_URL + '/v1' || 'http://localhost:8080/v1';
+	const API_URL = "https://api.fleety.dev/v1";
 	
 	// State for anonymous session
 	let anonToken = $state('');
@@ -169,6 +169,7 @@
 			const response = await fetch(`${API_URL}/init-session`, {
 				method: 'POST',
 				headers,
+				credentials: 'include', // CRITICAL: Required for CORS with credentials
 				body: JSON.stringify({ project_id: projectId })
 			});
 

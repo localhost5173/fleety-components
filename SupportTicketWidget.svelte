@@ -16,7 +16,7 @@
 	} = $props();
 
 	// API Configuration
-	const API_URL = import.meta.env.VITE_BACKEND_URL + '/v1' || 'http://localhost:8080/v1';
+	const API_URL = "https://api.fleety.dev/v1";
 
 	// === WebSocket Types and Service (Inlined) ===
 	type WSMessageType = 
@@ -67,7 +67,7 @@
 			// Start a new connection
 			const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
 				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-				const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+				const backendUrl = "https://api.fleety.dev/v1";
 				const wsUrl = `${protocol}//${backendUrl.replace(/^https?:\/\//, '')}/v1/tickets/${projectId}/${ticketSlug}/ws`;
 				const ws = new WebSocket(wsUrl);
 
@@ -899,7 +899,7 @@
 <!-- Floating Action Button -->
 {#if !isOpen}
 	<button
-		onclick={handleOpen}
+		onclick={() => handleOpen()}
 		class="ticket-fab theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'}"
 		transition:fade={{ duration: 200 }}
 		aria-label="Open Support Tickets"
