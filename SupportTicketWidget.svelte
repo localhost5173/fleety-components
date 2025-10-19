@@ -67,7 +67,7 @@
 			// Start a new connection
 			const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
 				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-				const backendUrl = "https://api.fleety.dev/v1";
+				const backendUrl = "https://api.fleety.dev";
 				const wsUrl = `${protocol}//${backendUrl.replace(/^https?:\/\//, '')}/v1/tickets/${projectId}/${ticketSlug}/ws`;
 				const ws = new WebSocket(wsUrl);
 
@@ -432,7 +432,7 @@
 
 	// UI State
 	let isOpen = $state(false);
-	let currentView = $state<'list' | 'create' | 'view'>('list');
+	let currentView = $state<'list' | 'create' | 'view'>('create');
 	
 	// Ticket Creation
 	let title = $state('');
@@ -1215,7 +1215,7 @@
 
 	.ticket-fab.dock-bottom-left.desktop {
 		bottom: 1rem;
-		left: 280px;
+		left: 1rem;
 	}
 
 	.ticket-fab.dock-bottom-left.mobile {
@@ -1230,7 +1230,7 @@
 
 	.ticket-fab.dock-top-left.desktop {
 		top: 1rem;
-		left: 280px;
+		left: 1rem;
 	}
 
 	.ticket-fab.dock-top-left.mobile {
@@ -1306,7 +1306,7 @@
 
 	.ticket-widget.dock-bottom-left.desktop {
 		bottom: 1rem;
-		left: 280px;
+		left: 1rem;
 	}
 
 	.ticket-widget.dock-bottom-left.mobile {
@@ -1321,7 +1321,7 @@
 
 	.ticket-widget.dock-top-left.desktop {
 		top: 1rem;
-		left: 280px;
+		left: 1rem;
 	}
 
 	.ticket-widget.dock-top-left.mobile {
@@ -1645,6 +1645,7 @@
 		font-size: 0.875rem;
 		border: 1px solid;
 		outline: none;
+		box-sizing: border-box;
 	}
 
 	.slug-input:focus {
@@ -1761,6 +1762,7 @@
 		border: 1px solid;
 		outline: none;
 		font-size: 0.875rem;
+		box-sizing: border-box;
 	}
 
 	.form-textarea {
@@ -2200,6 +2202,7 @@
 		padding: 0.5rem 0.75rem;
 		border: 1px solid;
 		outline: none;
+		box-sizing: border-box;
 	}
 
 	.message-input-field:focus {
