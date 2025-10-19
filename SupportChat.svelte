@@ -3,38 +3,45 @@
 	import { onMount } from 'svelte';
 	import { marked } from 'marked';
 
+	// Component props
+	let {
+		projectId,
+		theme = 'fleety',
+		dockPosition = 'bottom-right'
+	}: {
+		projectId: string;
+		theme?: 'fleety' | 'material' | 'midnight';
+		dockPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+	} = $props();
+
+	// Type definitions
+	type DockPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+	type Theme = 'fleety' | 'material' | 'midnight';
+
 	// Fleety API Configuration
-	const API_URL = 'https://api.fleety.dev/v1';
+	const API_URL = import.meta.env.VITE_BACKEND_URL + '/v1' || 'http://localhost:8080/v1';
 	
 	// State for anonymous session
-	let anonToken = '';
-	let tokenExpiresAt: Date | null = null;
-	let sessionError = '';
+	let anonToken = $state('');
+	let tokenExpiresAt: Date | null = $state(null);
+	let sessionError = $state('');
 
 	// Conversation history for context
 	type ConversationMessage = {
 		role: 'user' | 'assistant';
 		content: string;
 	};
-	let conversationHistory: ConversationMessage[] = [];
-
-	// Docking position types
-	type DockPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
-	type Theme = 'fleety' | 'material' | 'midnight';
+	let conversationHistory: ConversationMessage[] = $state([]);
 	
-	export let projectId: string;
-	export let dockPosition: DockPosition = 'bottom-right';
-	export let theme: Theme = 'fleety';
-	
-	let isOpen = false;
-	let messages: Array<{ id: string; text: string; isUser: boolean; timestamp: Date }> = [];
-	let currentMessage = '';
-	let isTyping = false;
-	let chatContainer: HTMLElement;
-	let inputElement: HTMLInputElement;
-	let isResizing = false;
-	let chatWidth = 320; // Default width in pixels
-	let chatHeight = 500; // Default height in pixels1
+	let isOpen = $state(false);
+	let messages: Array<{ id: string; text: string; isUser: boolean; timestamp: Date }> = $state([]);
+	let currentMessage = $state('');
+	let isTyping = $state(false);
+	let chatContainer: HTMLElement = $state()!;
+	let inputElement: HTMLInputElement = $state()!;
+	let isResizing = $state(false);
+	let chatWidth = $state(320); // Default width in pixels
+	let chatHeight = $state(500); // Default height in pixels1
 	let minWidth = 280;
 	let maxWidth = 500;
 	let minHeight = 400;
@@ -652,7 +659,7 @@
 <!-- Chat Toggle Button -->
 <div class="chat-toggle-button theme-{theme} dock-{dockPosition}">
 	<button
-		on:click={(e) => { e.stopPropagation(); toggleChat(); }}
+		onclick={(e) => { e.stopPropagation(); toggleChat(); }}
 		class="toggle-button {isOpen ? 'rotated' : ''}"
 		aria-label="Toggle support chat"
 	>
@@ -681,7 +688,7 @@
 		<div
 			role="button"
 			tabindex="0"
-			on:mousedown={(e) => startResize(e, getResizeHandles(dockPosition).corner)}
+			onmousedown={(e) => startResize(e, getResizeHandles(dockPosition).corner)}
 			class="resize-handle corner-{getResizeHandles(dockPosition).corner}"
 			title="Resize chat window"
 		></div>
@@ -691,7 +698,7 @@
 			<div
 				role="button"
 				tabindex="0"
-				on:mousedown={(e) => startResize(e, edge)}
+				onmousedown={(e) => startResize(e, edge)}
 				class="resize-handle edge-{edge}"
 				title="Resize {edge === 'n' || edge === 's' ? 'height' : 'width'}"
 			></div>
@@ -702,7 +709,7 @@
 				<div class="status-indicator"></div>
 				<span class="header-title">Fleety Support</span>
 			</div>
-			<button on:click={toggleChat} class="minimize-button" aria-label="Minimize chat">
+			<button onclick={toggleChat} class="minimize-button" aria-label="Minimize chat">
 				<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 				</svg>
@@ -743,12 +750,12 @@
 				<input
 					bind:this={inputElement}
 					bind:value={currentMessage}
-					on:keypress={handleKeyPress}
+					onkeypress={handleKeyPress}
 					placeholder="Ask about Fleety..."
 					class="message-input"
 				/>
 				<button
-					on:click={sendMessage}
+					onclick={sendMessage}
 					disabled={!currentMessage.trim()}
 					class="send-button"
 					aria-label="Send message"

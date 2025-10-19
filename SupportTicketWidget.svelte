@@ -2,11 +2,21 @@
 	import { fade, fly } from 'svelte/transition';
 	import { onMount, onDestroy } from 'svelte';
 
-	// Props
-	export let projectId: string;
+	// Component props
+	let {
+		projectId,
+		theme = 'fleety',
+		dockPosition = 'bottom-left',
+		onOpen = $bindable()
+	}: {
+		projectId: string;
+		theme?: 'fleety' | 'material' | 'midnight';
+		dockPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+			onOpen?: (options?: { view?: 'list' | 'create' | 'view'; prefillDescription?: string; prefillTitle?: string }) => void;
+	} = $props();
 
 	// API Configuration
-	const API_URL = 'https://api.fleety.dev/v1';
+	const API_URL = import.meta.env.VITE_BACKEND_URL + '/v1' || 'http://localhost:8080/v1';
 
 	// === WebSocket Types and Service (Inlined) ===
 	type WSMessageType = 
@@ -35,41 +45,44 @@
 		/**
 		 * Connect to a ticket's WebSocket for real-time updates
 		 */
-		connect(ticketSlug: string, callback: TicketWSCallback): () => void {
+		connect(projectId: string, ticketSlug: string, callback: TicketWSCallback): () => void {
+			const key = `${projectId}/${ticketSlug}`;
+			
 			// Ensure a callback set exists
-			if (!this.callbacks.has(ticketSlug)) {
-				this.callbacks.set(ticketSlug, new Set());
+			if (!this.callbacks.has(key)) {
+				this.callbacks.set(key, new Set());
 			}
-			this.callbacks.get(ticketSlug)!.add(callback);
+			this.callbacks.get(key)!.add(callback);
 
 			// If already connected, we're done
-			if (this.connections.has(ticketSlug)) {
-				return () => this.removeCallback(ticketSlug, callback);
+			if (this.connections.has(key)) {
+				return () => this.removeCallback(key, callback);
 			}
 
 			// If connecting, wait for the existing connection promise
-			if (this.connecting.has(ticketSlug)) {
-				return () => this.removeCallback(ticketSlug, callback);
+			if (this.connecting.has(key)) {
+				return () => this.removeCallback(key, callback);
 			}
 
 			// Start a new connection
 			const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
 				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-				const wsUrl = `${protocol}//localhost:8080/api/tickets/${ticketSlug}/ws`;
+				const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8080';
+				const wsUrl = `${protocol}//${backendUrl.replace(/^https?:\/\//, '')}/v1/tickets/${projectId}/${ticketSlug}/ws`;
 				const ws = new WebSocket(wsUrl);
 
 				ws.onopen = () => {
 					console.log(`WebSocket connected for ticket: ${ticketSlug}`);
-					this.connections.set(ticketSlug, ws);
-					this.reconnectAttempts.set(ticketSlug, 0);
-					this.connecting.delete(ticketSlug);
+					this.connections.set(key, ws);
+					this.reconnectAttempts.set(key, 0);
+					this.connecting.delete(key);
 					resolve(ws);
 				};
 
 				ws.onmessage = (event) => {
 					try {
 						const message: WSMessage = JSON.parse(event.data);
-						this.notifyCallbacks(ticketSlug, message);
+						this.notifyCallbacks(key, message);
 					} catch (error) {
 						console.error('Error parsing WebSocket message:', error);
 					}
@@ -77,35 +90,36 @@
 
 				ws.onerror = (error) => {
 					console.error(`WebSocket error for ticket ${ticketSlug}:`, error);
-					this.connecting.delete(ticketSlug);
+					this.connecting.delete(key);
 					reject(error);
 				};
 
 				ws.onclose = () => {
 					console.log(`WebSocket closed for ticket: ${ticketSlug}`);
-					this.connections.delete(ticketSlug);
-					this.connecting.delete(ticketSlug);
-					this.attemptReconnect(ticketSlug);
+					this.connections.delete(key);
+					this.connecting.delete(key);
+					this.attemptReconnect(projectId, ticketSlug);
 				};
 			});
 
-			this.connecting.set(ticketSlug, connectionPromise);
+			this.connecting.set(key, connectionPromise);
 
 			// Return unsubscribe function
-			return () => this.removeCallback(ticketSlug, callback);
+			return () => this.removeCallback(key, callback);
 		}
 
 		/**
 		 * Disconnect from a ticket's WebSocket
 		 */
-		disconnect(ticketSlug: string) {
-			const ws = this.connections.get(ticketSlug);
+		disconnect(projectId: string, ticketSlug: string) {
+			const key = `${projectId}/${ticketSlug}`;
+			const ws = this.connections.get(key);
 			if (ws) {
 				// Prevent reconnection attempts when explicitly disconnecting
-				this.reconnectAttempts.delete(ticketSlug);
+				this.reconnectAttempts.delete(key);
 				ws.close();
-				this.connections.delete(ticketSlug);
-				this.callbacks.delete(ticketSlug);
+				this.connections.delete(key);
+				this.callbacks.delete(key);
 			}
 		}
 
@@ -123,44 +137,52 @@
 		/**
 		 * Send a message through the WebSocket
 		 */
-		send(ticketSlug: string, message: any) {
-			const ws = this.connections.get(ticketSlug);
+		send(projectId: string, ticketSlug: string, message: any) {
+			const key = `${projectId}/${ticketSlug}`;
+			const ws = this.connections.get(key);
 			if (ws && ws.readyState === WebSocket.OPEN) {
 				ws.send(JSON.stringify(message));
 			}
 		}
 
-		private removeCallback(ticketSlug: string, callback: TicketWSCallback) {
-			const callbacks = this.callbacks.get(ticketSlug);
+		private removeCallback(key: string, callback: TicketWSCallback) {
+			const callbacks = this.callbacks.get(key);
 			if (callbacks) {
 				callbacks.delete(callback);
 				// If no more callbacks are listening, close the connection
 				if (callbacks.size === 0) {
-					this.disconnect(ticketSlug);
+					const ws = this.connections.get(key);
+					if (ws) {
+						this.reconnectAttempts.delete(key);
+						ws.close();
+						this.connections.delete(key);
+						this.callbacks.delete(key);
+					}
 				}
 			}
 		}
 
-		private notifyCallbacks(ticketSlug: string, message: WSMessage) {
-			const callbacks = this.callbacks.get(ticketSlug);
+		private notifyCallbacks(key: string, message: WSMessage) {
+			const callbacks = this.callbacks.get(key);
 			if (callbacks) {
 				callbacks.forEach(callback => callback(message));
 			}
 		}
 
-		private attemptReconnect(ticketSlug: string) {
-			const attempts = this.reconnectAttempts.get(ticketSlug) || 0;
+		private attemptReconnect(projectId: string, ticketSlug: string) {
+			const key = `${projectId}/${ticketSlug}`;
+			const attempts = this.reconnectAttempts.get(key) || 0;
 			
 			if (attempts >= this.maxReconnectAttempts) {
 				console.log(`Max reconnection attempts reached for ticket: ${ticketSlug}`);
-				this.reconnectAttempts.delete(ticketSlug);
+				this.reconnectAttempts.delete(key);
 				return;
 			}
 
-			const callbacks = this.callbacks.get(ticketSlug);
+			const callbacks = this.callbacks.get(key);
 			if (!callbacks || callbacks.size === 0) {
 				// No one is listening anymore, don't reconnect
-				this.reconnectAttempts.delete(ticketSlug);
+				this.reconnectAttempts.delete(key);
 				return;
 			}
 
@@ -168,14 +190,14 @@
 			console.log(`Reconnecting to ticket ${ticketSlug} in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
 
 			setTimeout(() => {
-				this.reconnectAttempts.set(ticketSlug, attempts + 1);
+				this.reconnectAttempts.set(key, attempts + 1);
 				
 				// Re-establish connection with existing callbacks
 				const existingCallbacks = Array.from(callbacks);
-				this.callbacks.delete(ticketSlug);
+				this.callbacks.delete(key);
 				
 				existingCallbacks.forEach(callback => {
-					this.connect(ticketSlug, callback);
+					this.connect(projectId, ticketSlug, callback);
 				});
 			}, delay);
 		}
@@ -248,6 +270,10 @@
 					: 'Please wait before creating another ticket.';
 				throw new Error(`rate_limit:${result.message || 'You\'re creating tickets too fast.'} ${retryMessage}`);
 			}
+			// Handle insufficient credits
+			if (response.status === 402) {
+				throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
+			}
 			throw new Error(result.error || 'Failed to create ticket');
 		}
 
@@ -264,7 +290,7 @@
 			headers['Authorization'] = `Bearer ${token}`;
 		}
 
-		const response = await fetch(`${API_URL}/tickets/${slug}`, { headers });
+		const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}`, { headers });
 
 		const result = await response.json();
 
@@ -276,6 +302,10 @@
 					? `Please wait ${retryAfter} seconds before trying again.`
 					: 'Please wait before trying again.';
 				throw new Error(`rate_limit:${result.message || 'You\'re sending requests too fast.'} ${retryMessage}`);
+			}
+			// Handle insufficient credits
+			if (response.status === 402) {
+				throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
 			}
 			throw new Error(result.error || 'Failed to fetch ticket');
 		}
@@ -295,7 +325,7 @@
 			headers['Authorization'] = `Bearer ${token}`;
 		}
 
-		const response = await fetch(`${API_URL}/tickets/${slug}/messages`, {
+		const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}/messages`, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(data)
@@ -311,6 +341,10 @@
 					? `Please wait ${retryAfter} seconds before sending another message.`
 					: 'Please wait before sending another message.';
 				throw new Error(`rate_limit:${result.message || 'You\'re sending messages too fast.'} ${retryMessage}`);
+			}
+			// Handle insufficient credits
+			if (response.status === 402) {
+				throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
 			}
 			throw new Error(result.error || 'Failed to add message');
 		}
@@ -381,7 +415,7 @@
 	 * Mark all messages in a ticket as read by a specific reader (user or admin)
 	 */
 	async function markMessagesAsRead(slug: string, reader: 'user' | 'admin'): Promise<void> {
-		const response = await fetch(`${API_URL}/tickets/${slug}/messages/read`, {
+		const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}/messages/read`, {
 			method: 'PATCH',
 			headers: {
 				'Content-Type': 'application/json'
@@ -395,15 +429,6 @@
 			throw new Error(result.error || 'Failed to mark messages as read');
 		}
 	}
-
-	// Component props
-	let {
-		theme = 'fleety',
-		dockPosition = 'bottom-left'
-	}: {
-		theme?: 'fleety' | 'material' | 'midnight';
-		dockPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
-	} = $props();
 
 	// UI State
 	let isOpen = $state(false);
@@ -502,7 +527,7 @@
 	function connectAllTicketWebSockets() {
 		savedTickets.forEach(ticket => {
 			if (!wsUnsubscribes.has(ticket.slug)) {
-				const unsubscribe = ticketWS.connect(ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
+				const unsubscribe = ticketWS.connect(projectId, ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
 				wsUnsubscribes.set(ticket.slug, unsubscribe);
 			}
 		});
@@ -564,7 +589,7 @@
 
 		// Ensure WebSocket connection for this ticket (for background updates)
 		if (!wsUnsubscribes.has(ticket.slug)) {
-			const unsubscribe = ticketWS.connect(ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
+			const unsubscribe = ticketWS.connect(projectId, ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
 			wsUnsubscribes.set(ticket.slug, unsubscribe);
 		}
 	}
@@ -599,12 +624,14 @@
 			title = '';
 			description = '';
 			// Connect to WebSocket for real-time updates
-			wsUnsubscribe = ticketWS.connect(ticket.slug, handleWebSocketMessage);
+			wsUnsubscribe = ticketWS.connect(projectId, ticket.slug, handleWebSocketMessage);
 		} catch (error: any) {
 			// Display user-friendly rate limit message
 			const errorMsg = error.message || 'Failed to create ticket';
 			createError = errorMsg.includes('rate_limit:') 
 				? '⏰ ' + errorMsg.replace('rate_limit:', '')
+				: errorMsg.includes('credits_depleted:')
+				? '💳 ' + errorMsg.replace('credits_depleted:', '')
 				: errorMsg;
 		} finally {
 			isCreating = false;
@@ -647,7 +674,7 @@
 			}
 			
 			// Subscribe to WebSocket updates for the active ticket
-			wsUnsubscribe = ticketWS.connect(slug.trim(), handleWebSocketMessage);
+			wsUnsubscribe = ticketWS.connect(projectId, slug.trim(), handleWebSocketMessage);
 			
 			// Scroll to bottom after loading
 			scrollToBottom();
@@ -656,6 +683,8 @@
 			const errorMsg = error.message || 'Failed to load ticket';
 			ticketError = errorMsg.includes('rate_limit:') 
 				? '⏰ ' + errorMsg.replace('rate_limit:', '')
+				: errorMsg.includes('credits_depleted:')
+				? '💳 ' + errorMsg.replace('credits_depleted:', '')
 				: errorMsg;
 		} finally {
 			isLoadingTicket = false;
@@ -752,6 +781,8 @@
 			const errorMsg = error.message || 'Failed to send message';
 			messageError = errorMsg.includes('rate_limit:') 
 				? '⏰ ' + errorMsg.replace('rate_limit:', '')
+				: errorMsg.includes('credits_depleted:')
+				? '💳 ' + errorMsg.replace('credits_depleted:', '')
 				: errorMsg;
 		} finally {
 			isSendingMessage = false;
@@ -768,15 +799,31 @@
 		// Keep background WebSocket connections active for notifications
 	}
 
-	function handleOpen() {
-		isOpen = true;
-		// Refresh unread counts when widget opens
-		refreshUnreadCounts();
-		if (currentView === 'view' && currentTicket && !wsUnsubscribe) {
-			// Reconnect WebSocket if needed
-			wsUnsubscribe = ticketWS.connect(currentTicket.slug, handleWebSocketMessage);
-		}
+
+	function handleOpen(options?: { view?: 'list' | 'create' | 'view'; prefillDescription?: string; prefillTitle?: string }) {
+	   isOpen = true;
+	   // Set the view if specified
+	   if (options?.view) {
+		   currentView = options.view;
+	   }
+	   // Prefill description if specified
+	   if (options?.prefillDescription) {
+		   description = options.prefillDescription;
+	   }
+	   // Prefill title if specified
+	   if (options?.prefillTitle) {
+		   title = options.prefillTitle;
+	   }
+	   // Refresh unread counts when widget opens
+	   refreshUnreadCounts();
+	   if (currentView === 'view' && currentTicket && !wsUnsubscribe) {
+		   // Reconnect WebSocket if needed
+		   wsUnsubscribe = ticketWS.connect(projectId, currentTicket.slug, handleWebSocketMessage);
+	   }
 	}
+
+	// Expose handleOpen via bindable
+	onOpen = handleOpen;
 
 	// Refresh unread counts for all saved tickets
 	async function refreshUnreadCounts() {
