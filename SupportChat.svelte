@@ -40,12 +40,13 @@
 	let chatContainer: HTMLElement = $state()!;
 	let inputElement: HTMLInputElement = $state()!;
 	let isResizing = $state(false);
-	let chatWidth = $state(320); // Default width in pixels
-	let chatHeight = $state(500); // Default height in pixels1
-	let minWidth = 280;
-	let maxWidth = 500;
+	let chatWidth = $state(380); // Default width in pixels
+	let chatHeight = $state(500); // Default height in pixels
+	let minWidth = 320;
+	let maxWidth = 600;
 	let minHeight = 400;
 	let maxHeight = 700;
+	let isFullscreen = $state(false);
 
 	// No theme configuration needed - using CSS classes
 
@@ -218,6 +219,10 @@
 				inputElement?.focus();
 			}, 100);
 		}
+	}
+
+	function toggleFullscreen() {
+		isFullscreen = !isFullscreen;
 	}
 
 	function addMessage(text: string, isUser: boolean) {
@@ -657,64 +662,64 @@
 	});
 </script>
 
-<!-- Chat Toggle Button -->
-<div class="chat-toggle-button theme-{theme} dock-{dockPosition}">
-	<button
-		onclick={(e) => { e.stopPropagation(); toggleChat(); }}
-		class="toggle-button {isOpen ? 'rotated' : ''}"
-		aria-label="Toggle support chat"
-	>
-		{#if isOpen}
-			<svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-			</svg>
-		{:else}
-			<svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-			</svg>
-		{/if}
-	</button>
-</div>
-
 <!-- Chat Window -->
 {#if isOpen}
 	<div
 		in:fly={{ y: 20, duration: 300 }}
 		out:fly={{ y: 20, duration: 200 }}
-		class="chat-container theme-{theme} dock-{dockPosition} {isResizing ? 'resizing' : ''}"
-		style="width: {chatWidth}px; height: {chatHeight}px;"
+		class="chat-container theme-{theme} dock-{dockPosition} {isResizing ? 'resizing' : ''} {isFullscreen ? 'fullscreen' : ''}"
+		style={isFullscreen ? '' : `width: ${chatWidth}px; height: ${chatHeight}px;`}
+		role="dialog"
+		aria-label="Support chat"
+		tabindex="-1"
+		onclick={(e) => e.stopPropagation()}
+		onkeydown={(e) => e.stopPropagation()}
 	>
-		<!-- Dynamic Resize Handles Based on Dock Position -->
-		<!-- Corner Resize Handle -->
-		<div
-			role="button"
-			tabindex="0"
-			onmousedown={(e) => startResize(e, getResizeHandles(dockPosition).corner)}
-			class="resize-handle corner-{getResizeHandles(dockPosition).corner}"
-			title="Resize chat window"
-		></div>
-		
-		<!-- Edge Resize Handles -->
-		{#each getResizeHandles(dockPosition).edges as edge}
+		{#if !isFullscreen}
+			<!-- Dynamic Resize Handles Based on Dock Position -->
+			<!-- Corner Resize Handle -->
 			<div
 				role="button"
 				tabindex="0"
-				onmousedown={(e) => startResize(e, edge)}
-				class="resize-handle edge-{edge}"
-				title="Resize {edge === 'n' || edge === 's' ? 'height' : 'width'}"
+				onmousedown={(e) => startResize(e, getResizeHandles(dockPosition).corner)}
+				class="resize-handle corner-{getResizeHandles(dockPosition).corner}"
+				title="Resize chat window"
 			></div>
-		{/each}
+			
+			<!-- Edge Resize Handles -->
+			{#each getResizeHandles(dockPosition).edges as edge}
+				<div
+					role="button"
+					tabindex="0"
+					onmousedown={(e) => startResize(e, edge)}
+					class="resize-handle edge-{edge}"
+					title="Resize {edge === 'n' || edge === 's' ? 'height' : 'width'}"
+				></div>
+			{/each}
+		{/if}
 		<!-- Chat Header -->
 		<div class="chat-header">
 			<div class="header-left">
-				<div class="status-indicator"></div>
 				<span class="header-title">Fleety Support</span>
 			</div>
-			<button onclick={toggleChat} class="minimize-button" aria-label="Minimize chat">
-				<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-				</svg>
-			</button>
+			<div class="header-right">
+				<button onclick={toggleFullscreen} class="fullscreen-button" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
+					{#if isFullscreen}
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+						</svg>
+					{/if}
+				</button>
+				<button onclick={toggleChat} class="minimize-button" aria-label="Minimize chat">
+					<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+					</svg>
+				</button>
+			</div>
 		</div>
 
 		<!-- Messages Container -->
@@ -769,6 +774,24 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Chat Toggle Button - Always visible, positioned below the chat window -->
+<div class="chat-toggle-button theme-{theme} dock-{dockPosition}">
+	<button
+		onclick={(e) => { e.stopPropagation(); toggleChat(); }}
+		class="toggle-button"
+		aria-label={isOpen ? "Close support chat" : "Open support chat"}
+	>
+		<div class="icon-container" class:open={isOpen}>
+			<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-default" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+			</svg>
+			<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-close" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+			</svg>
+		</div>
+	</button>
+</div>
 
 <style>
 	/* === Animations === */
@@ -833,17 +856,39 @@
 		transform: scale(1.1);
 	}
 
-	.toggle-button.rotated {
-		transform: rotate(45deg);
-	}
-
-	.toggle-button.rotated:hover {
-		transform: rotate(45deg) scale(1.1);
+	.icon-container {
+		position: relative;
+		width: 1.5rem;
+		height: 1.5rem;
 	}
 
 	.toggle-button .icon {
 		width: 1.5rem;
 		height: 1.5rem;
+		position: absolute;
+		top: 0;
+		left: 0;
+		transition: opacity 0.3s ease, transform 0.3s ease;
+	}
+
+	.icon-default {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
+	}
+
+	.icon-close {
+		opacity: 0;
+		transform: rotate(90deg) scale(0.8);
+	}
+
+	.icon-container.open .icon-default {
+		opacity: 0;
+		transform: rotate(-90deg) scale(0.8);
+	}
+
+	.icon-container.open .icon-close {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
 	}
 
 	/* Theme colors for toggle button */
@@ -894,24 +939,36 @@
 		user-select: none;
 	}
 
-	/* Chat container positioning */
+	.chat-container.fullscreen {
+		position: fixed !important;
+		top: 0 !important;
+		left: 0 !important;
+		right: 0 !important;
+		bottom: 0 !important;
+		width: 100vw !important;
+		height: 100vh !important;
+		border-radius: 0 !important;
+		z-index: 9999 !important;
+	}
+
+	/* Chat container positioning - positioned above the button */
 	.chat-container.dock-bottom-right {
-		bottom: 6rem;
+		bottom: 5.5rem;
 		right: 1.5rem;
 	}
 
 	.chat-container.dock-bottom-left {
-		bottom: 6rem;
+		bottom: 5.5rem;
 		left: 1.5rem;
 	}
 
 	.chat-container.dock-top-right {
-		top: 6rem;
+		top: 5.5rem;
 		right: 1.5rem;
 	}
 
 	.chat-container.dock-top-left {
-		top: 6rem;
+		top: 5.5rem;
 		left: 1.5rem;
 	}
 
@@ -1024,7 +1081,7 @@
 		align-items: center;
 		justify-content: space-between;
 		border-radius: 0.5rem 0.5rem 0 0;
-		padding: 0.75rem 1rem;
+		padding: 1rem 1.5rem;
 		transition: all 0.2s;
 	}
 
@@ -1034,16 +1091,28 @@
 		gap: 0.5rem;
 	}
 
-	.status-indicator {
-		width: 0.5rem;
-		height: 0.5rem;
-		border-radius: 50%;
-		background: #22c55e;
-		animation: pulse 2s infinite;
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.fullscreen-button {
+		background: none;
+		border: none;
+		cursor: pointer;
+		transition: all 0.2s;
+		color: inherit;
+	}
+
+	.fullscreen-button:hover {
+		opacity: 0.8;
+		transform: scale(1.1);
 	}
 
 	.header-title {
-		font-weight: 500;
+		font-weight: 600;
+		font-size: 0.875rem;
 	}
 
 	.minimize-button {
@@ -1051,10 +1120,11 @@
 		border: none;
 		cursor: pointer;
 		transition: all 0.2s;
+		color: inherit;
 	}
 
 	.minimize-button:hover {
-		opacity: 0.7;
+		opacity: 0.8;
 		transform: scale(1.1);
 	}
 

@@ -457,11 +457,13 @@
 
 	// Chat dimensions
 	let chatWidth = $state(380);
-	let chatHeight = $state(550);
+	let chatHeight = $state(500);
 	let minWidth = 320;
-	let maxWidth = 500;
-	let minHeight = 450;
+	let maxWidth = 600;
+	let minHeight = 400;
 	let maxHeight = 700;
+	let isResizing = $state(false);
+	let isFullscreen = $state(false);
 
 	// WebSocket
 	let wsUnsubscribe = $state<(() => void) | null>(null);
@@ -501,10 +503,21 @@
 		
 		window.addEventListener('ticket-created', handleTicketCreated as EventListener);
 		
+		// Close widget when clicking outside
+		const handleClickOutside = (event: MouseEvent) => {
+			const target = event.target as Element;
+			if (isOpen && target && !target.closest('.ticket-widget') && !target.closest('.ticket-fab')) {
+				isOpen = false;
+			}
+		};
+		
+		document.addEventListener('click', handleClickOutside);
+		
 		// Cleanup listeners on component destroy
 		return () => {
 			window.removeEventListener('ticket-created', handleTicketCreated as EventListener);
 			window.removeEventListener('resize', checkMobile);
+			document.removeEventListener('click', handleClickOutside);
 		};
 	});
 
@@ -799,6 +812,14 @@
 		// Keep background WebSocket connections active for notifications
 	}
 
+	// Watch for isOpen changes to handle WebSocket cleanup
+	$effect(() => {
+		if (!isOpen && wsUnsubscribe) {
+			wsUnsubscribe();
+			wsUnsubscribe = null;
+		}
+	});
+
 
 	function handleOpen(options?: { view?: 'list' | 'create' | 'view'; prefillDescription?: string; prefillTitle?: string }) {
 	   isOpen = true;
@@ -894,36 +915,108 @@
 	function getStatusLabel(status: string): string {
 		return status.replace('_', ' ').toUpperCase();
 	}
-</script>
 
-<!-- Floating Action Button -->
-{#if !isOpen}
-	<button
-		onclick={() => handleOpen()}
-		class="ticket-fab theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'}"
-		transition:fade={{ duration: 200 }}
-		aria-label="Open Support Tickets"
-	>
-		<div class="fab-icon-wrapper">
-			<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-					d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-			</svg>
-			<!-- Blue dot indicator for unread messages -->
-			{#if totalUnreadCount > 0}
-				<div class="unread-indicator"></div>
-			{/if}
-		</div>
-	</button>
-{/if}
+	function toggleFullscreen() {
+		isFullscreen = !isFullscreen;
+	}
+
+	function getResizeHandles(position: typeof dockPosition): { corner: 'nw' | 'ne' | 'sw' | 'se'; edges: ('n' | 's' | 'w' | 'e')[] } {
+		switch (position) {
+			case 'bottom-right':
+				return { corner: 'nw', edges: ['n', 'w'] }; // top-left corner, top and left edges
+			case 'bottom-left':
+				return { corner: 'ne', edges: ['n', 'e'] }; // top-right corner, top and right edges
+			case 'top-right':
+				return { corner: 'sw', edges: ['s', 'w'] }; // bottom-left corner, bottom and left edges
+			case 'top-left':
+				return { corner: 'se', edges: ['s', 'e'] }; // bottom-right corner, bottom and right edges
+		}
+	}
+
+	function startResize(event: MouseEvent, direction: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e') {
+		isResizing = true;
+		const startX = event.clientX;
+		const startY = event.clientY;
+		const startWidth = chatWidth;
+		const startHeight = chatHeight;
+
+		function handleMouseMove(e: MouseEvent) {
+			if (!isResizing) return;
+			
+			const deltaX = e.clientX - startX;
+			const deltaY = e.clientY - startY;
+			
+			let newWidth = startWidth;
+			let newHeight = startHeight;
+			
+			// Handle horizontal resizing
+			if (direction.includes('w')) {
+				// West side - decrease width when moving right, increase when moving left
+				newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - deltaX));
+			} else if (direction.includes('e')) {
+				// East side - increase width when moving right, decrease when moving left
+				newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + deltaX));
+			}
+			
+			// Handle vertical resizing
+			if (direction.includes('n')) {
+				// North side - decrease height when moving down, increase when moving up
+				newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight - deltaY));
+			} else if (direction.includes('s')) {
+				// South side - increase height when moving down, decrease when moving up
+				newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
+			}
+			
+			chatWidth = newWidth;
+			chatHeight = newHeight;
+		}
+
+		function handleMouseUp() {
+			isResizing = false;
+			document.removeEventListener('mousemove', handleMouseMove);
+			document.removeEventListener('mouseup', handleMouseUp);
+		}
+
+		document.addEventListener('mousemove', handleMouseMove);
+		document.addEventListener('mouseup', handleMouseUp);
+	}
+</script>
 
 <!-- Chat Widget -->
 {#if isOpen}
 	<div
-		class="ticket-widget theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'}"
-		style="width: {chatWidth}px; height: {chatHeight}px;"
+		class="ticket-widget theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'} {isResizing ? 'resizing' : ''} {isFullscreen ? 'fullscreen' : ''}"
+		style={isFullscreen ? '' : `width: ${chatWidth}px; height: ${chatHeight}px;`}
 		transition:fly={{ y: 50, duration: 300 }}
+		role="dialog"
+		aria-label="Support tickets"
+		tabindex="-1"
+		onclick={(e) => e.stopPropagation()}
+		onkeydown={(e) => e.stopPropagation()}
 	>
+		{#if !isFullscreen}
+			<!-- Dynamic Resize Handles Based on Dock Position -->
+			<!-- Corner Resize Handle -->
+			<div
+				role="button"
+				tabindex="0"
+				onmousedown={(e) => startResize(e, getResizeHandles(dockPosition).corner)}
+				class="resize-handle corner-{getResizeHandles(dockPosition).corner}"
+				title="Resize widget"
+			></div>
+			
+			<!-- Edge Resize Handles -->
+			{#each getResizeHandles(dockPosition).edges as edge}
+				<div
+					role="button"
+					tabindex="0"
+					onmousedown={(e) => startResize(e, edge)}
+					class="resize-handle edge-{edge}"
+					title="Resize {edge === 'n' || edge === 's' ? 'height' : 'width'}"
+				></div>
+			{/each}
+		{/if}
+
 		<!-- Header -->
 		<div class="widget-header">
 			<div class="header-left">
@@ -946,56 +1039,71 @@
 					{/if}
 				</h3>
 			</div>
-			<button onclick={handleClose} class="close-button" aria-label="Close">
-				<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-				</svg>
-			</button>
+			<div class="header-right">
+				<button onclick={toggleFullscreen} class="fullscreen-button" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
+					{#if isFullscreen}
+						<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					{:else}
+						<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+						</svg>
+					{/if}
+				</button>
+				<button onclick={handleClose} class="close-button" aria-label="Minimize">
+					<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+					</svg>
+				</button>
+			</div>
 		</div>		<!-- Content -->
 		<div class="widget-content">
 			{#if currentView === 'list'}
 				<!-- Ticket List View -->
 				<div class="ticket-list-view">
-					<button onclick={goToCreate} class="create-ticket-button">
-						<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-						</svg>
-						Create New Ticket
-					</button>
+					<div class="ticket-list-content">
+						<button onclick={goToCreate} class="create-ticket-button">
+							<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+							</svg>
+							Create New Ticket
+						</button>
 
-					{#if savedTickets.length > 0}
-						<div class="tickets-section">
-							<h4 class="section-title">Your Tickets</h4>
-							{#each savedTickets as ticket}
-								<button
-									onclick={() => handleLoadTicket(ticket.slug)}
-									class="ticket-card"
-								>
-									<div class="ticket-card-content">
-										<div class="ticket-card-left">
-											<!-- Unread indicator - blue dot -->
-											{#if ticket.unreadCount && ticket.unreadCount > 0}
-												<div class="unread-dot" title="{ticket.unreadCount} unread message{ticket.unreadCount > 1 ? 's' : ''}"></div>
-											{/if}
-											<div class="ticket-info">
-												<p class="ticket-title">{ticket.title}</p>
-												<p class="ticket-slug">#{ticket.slug}</p>
+						{#if savedTickets.length > 0}
+							<div class="tickets-section">
+								<h4 class="section-title">Your Tickets</h4>
+								{#each savedTickets as ticket}
+									<button
+										onclick={() => handleLoadTicket(ticket.slug)}
+										class="ticket-card"
+									>
+										<div class="ticket-card-content">
+											<div class="ticket-card-left">
+												<!-- Unread indicator - blue dot -->
+												{#if ticket.unreadCount && ticket.unreadCount > 0}
+													<div class="unread-dot" title="{ticket.unreadCount} unread message{ticket.unreadCount > 1 ? 's' : ''}"></div>
+												{/if}
+												<div class="ticket-info">
+													<p class="ticket-title">{ticket.title}</p>
+													<p class="ticket-slug">#{ticket.slug}</p>
+												</div>
 											</div>
+											<span class="status-badge status-{ticket.status}">
+												{getStatusLabel(ticket.status)}
+											</span>
 										</div>
-										<span class="status-badge status-{ticket.status}">
-											{getStatusLabel(ticket.status)}
-										</span>
-									</div>
-								</button>
-							{/each}
-						</div>
-					{:else}
-						<div class="empty-state">
-							<p>No tickets yet</p>
-						</div>
-					{/if}
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="empty-state">
+								<p>No tickets yet</p>
+							</div>
+						{/if}
+					</div>
 
-					<!-- Load by Slug -->
+					<!-- Load by Slug - at bottom -->
 					<div class="load-by-slug-section">
 						<h4 class="section-title">Have a ticket ID?</h4>
 						<div class="slug-input-wrapper">
@@ -1016,15 +1124,15 @@
 								class="load-button"
 							>
 								{isLoadingTicket ? '...' : 'Load'}
-					</button>
-				</div>
-				{#if ticketError}
-					<div class="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mt-2">
-						<p class="text-red-400 text-sm">{ticketError}</p>
+							</button>
+						</div>
+						{#if ticketError}
+							<div class="error-message">
+								<p>{ticketError}</p>
+							</div>
+						{/if}
 					</div>
-				{/if}
-			</div>
-		</div>			{:else if currentView === 'create'}
+				</div>			{:else if currentView === 'create'}
 				<!-- Create Ticket View -->
 				<div class="create-ticket-view">
 					<div class="create-form">
@@ -1040,26 +1148,26 @@
 							/>
 						</div>
 
-						<div class="form-field">
+						<div class="form-field form-field-flex">
 							<label for="ticket-description" class="form-label">Description</label>
 							<textarea
 								id="ticket-description"
 								bind:value={description}
 								placeholder="Provide detailed information about your issue..."
-								rows="8"
 								maxlength="5000"
-								class="form-textarea"
+								class="form-textarea form-textarea-flex"
 							></textarea>
 							<p class="char-counter">
 								{description.length}/5000 characters
 							</p>
 						</div>
 
-				{#if createError}
-					<div class="error-message">
-						<p>{createError}</p>
-					</div>
-				{/if}						<button
+						{#if createError}
+							<div class="error-message">
+								<p>{createError}</p>
+							</div>
+						{/if}
+						<button
 							onclick={handleCreateTicket}
 							disabled={isCreating || !title.trim() || !description.trim()}
 							class="submit-button"
@@ -1180,6 +1288,29 @@
 	</div>
 {/if}
 
+<!-- Floating Action Button - Always visible, positioned below the widget -->
+<button
+	onclick={(e) => { e.stopPropagation(); isOpen ? handleClose() : handleOpen(); }}
+	class="ticket-fab theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'}"
+	aria-label={isOpen ? "Close Support Tickets" : "Open Support Tickets"}
+>
+	<div class="fab-icon-wrapper">
+		<div class="icon-container" class:open={isOpen}>
+			<svg class="icon icon-default" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+					d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+			</svg>
+			<svg class="icon icon-close" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+			</svg>
+		</div>
+		<!-- Blue dot indicator for unread messages -->
+		{#if totalUnreadCount > 0 && !isOpen}
+			<div class="unread-indicator"></div>
+		{/if}
+	</div>
+</button>
+
 <style>
 	/* === Animations === */
 	@keyframes pulse {
@@ -1270,9 +1401,39 @@
 		position: relative;
 	}
 
+	.icon-container {
+		position: relative;
+		width: 1.5rem;
+		height: 1.5rem;
+	}
+
 	.fab-icon-wrapper .icon {
 		width: 1.5rem;
 		height: 1.5rem;
+		position: absolute;
+		top: 0;
+		left: 0;
+		transition: opacity 0.3s ease, transform 0.3s ease;
+	}
+
+	.icon-default {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
+	}
+
+	.icon-close {
+		opacity: 0;
+		transform: rotate(90deg) scale(0.8);
+	}
+
+	.icon-container.open .icon-default {
+		opacity: 0;
+		transform: rotate(-90deg) scale(0.8);
+	}
+
+	.icon-container.open .icon-close {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
 	}
 
 	.unread-indicator {
@@ -1296,36 +1457,57 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+		transition: box-shadow 0.3s;
 	}
 
-	/* Widget positioning */
+	.ticket-widget:hover {
+		box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.6);
+	}
+
+	.ticket-widget.resizing {
+		user-select: none;
+	}
+
+	.ticket-widget.fullscreen {
+		position: fixed !important;
+		top: 0 !important;
+		left: 0 !important;
+		right: 0 !important;
+		bottom: 0 !important;
+		width: 100vw !important;
+		height: 100vh !important;
+		border-radius: 0 !important;
+		z-index: 9999 !important;
+	}
+
+	/* Widget positioning - positioned above the button */
 	.ticket-widget.dock-bottom-right {
-		bottom: 1rem;
+		bottom: 5.5rem;
 		right: 1rem;
 	}
 
 	.ticket-widget.dock-bottom-left.desktop {
-		bottom: 1rem;
+		bottom: 5.5rem;
 		left: 1rem;
 	}
 
 	.ticket-widget.dock-bottom-left.mobile {
-		bottom: 1rem;
+		bottom: 5.5rem;
 		left: 1rem;
 	}
 
 	.ticket-widget.dock-top-right {
-		top: 1rem;
+		top: 5.5rem;
 		right: 1rem;
 	}
 
 	.ticket-widget.dock-top-left.desktop {
-		top: 1rem;
+		top: 5.5rem;
 		left: 1rem;
 	}
 
 	.ticket-widget.dock-top-left.mobile {
-		top: 1rem;
+		top: 5.5rem;
 		left: 1rem;
 	}
 
@@ -1345,12 +1527,99 @@
 		border-color: #6b21a8;
 	}
 
+	/* === Resize Handles === */
+	.resize-handle {
+		position: absolute;
+		transition: background-color 0.2s;
+		z-index: 10;
+	}
+
+	.resize-handle.corner-nw {
+		top: 0;
+		left: 0;
+		width: 1rem;
+		height: 1rem;
+		cursor: nw-resize;
+	}
+
+	.resize-handle.corner-ne {
+		top: 0;
+		right: 0;
+		width: 1rem;
+		height: 1rem;
+		cursor: ne-resize;
+	}
+
+	.resize-handle.corner-sw {
+		bottom: 0;
+		left: 0;
+		width: 1rem;
+		height: 1rem;
+		cursor: sw-resize;
+	}
+
+	.resize-handle.corner-se {
+		bottom: 0;
+		right: 0;
+		width: 1rem;
+		height: 1rem;
+		cursor: se-resize;
+	}
+
+	.resize-handle.edge-n {
+		top: 0;
+		left: 1rem;
+		right: 1rem;
+		height: 0.5rem;
+		cursor: n-resize;
+	}
+
+	.resize-handle.edge-s {
+		bottom: 0;
+		left: 1rem;
+		right: 1rem;
+		height: 0.5rem;
+		cursor: s-resize;
+	}
+
+	.resize-handle.edge-w {
+		left: 0;
+		top: 1rem;
+		bottom: 1rem;
+		width: 0.5rem;
+		cursor: w-resize;
+	}
+
+	.resize-handle.edge-e {
+		right: 0;
+		top: 1rem;
+		bottom: 1rem;
+		width: 0.5rem;
+		cursor: e-resize;
+	}
+
+	.resize-handle:hover {
+		background-color: rgba(255, 255, 255, 0.1);
+	}
+
+	.theme-fleety .resize-handle:hover {
+		background-color: rgba(250, 204, 21, 0.2);
+	}
+
+	.theme-material .resize-handle:hover {
+		background-color: rgba(37, 99, 235, 0.1);
+	}
+
+	.theme-midnight .resize-handle:hover {
+		background-color: rgba(147, 51, 234, 0.2);
+	}
+
 	/* === Widget Header === */
 	.widget-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 1rem;
+		padding: 0.5rem 0.75rem;
 	}
 
 	.theme-fleety .widget-header {
@@ -1372,29 +1641,54 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-	}
-
-	.back-button,
-	.close-button {
-		background: none;
-		border: none;
-		cursor: pointer;
-		transition: opacity 0.2s;
-		color: inherit;
-	}
-
-	.back-button:hover,
-	.close-button:hover {
-		opacity: 0.8;
-	}
-
-	.icon {
-		width: 1.25rem;
-		height: 1.25rem;
+		min-width: 0;
+		flex: 1;
 	}
 
 	.header-title {
 		font-weight: 600;
+		font-size: 0.875rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.ticket-title-sm {
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.back-button,
+	.close-button,
+	.fullscreen-button {
+		background: none;
+		border: none;
+		cursor: pointer;
+		transition: all 0.2s;
+		color: inherit;
+	}
+
+	.back-button:hover,
+	.close-button:hover,
+	.fullscreen-button:hover {
+		opacity: 0.8;
+		transform: scale(1.1);
+	}
+
+	.icon {
+		width: 1rem;
+		height: 1rem;
+	}
+
+	.header-title {
+		font-weight: 600;
+		font-size: 0.875rem;
 	}
 
 	.ticket-title-sm {
@@ -1405,16 +1699,28 @@
 	.widget-content {
 		flex: 1;
 		overflow: hidden;
+		display: flex;
+		justify-content: center;
 	}
 
 	.ticket-list-view {
 		height: 100%;
+		padding: 1rem;
+		padding-bottom: 0;
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+		max-width: 600px;
+	}
+
+	.ticket-list-content {
+		flex: 1;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		padding: 1rem;
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		min-height: 0;
 	}
 
 	.create-ticket-button {
@@ -1615,9 +1921,10 @@
 
 	/* === Load by Slug Section === */
 	.load-by-slug-section {
-		margin-top: 1.5rem;
+		margin-top: auto;
 		padding-top: 1rem;
-		border-top: 1px solid;
+		padding-bottom: 1rem;
+		flex-shrink: 0;
 	}
 
 	.theme-fleety .load-by-slug-section {
@@ -1636,6 +1943,7 @@
 		display: flex;
 		gap: 0.5rem;
 		margin-top: 0.5rem;
+		margin-bottom: 1rem;
 	}
 
 	.slug-input {
@@ -1719,15 +2027,35 @@
 	/* === Create Ticket View === */
 	.create-ticket-view {
 		height: 100%;
-		overflow-y: auto;
-		overscroll-behavior: contain;
 		padding: 1rem;
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		overflow-y: auto;
 	}
 
 	.create-form {
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+		width: 100%;
+		max-width: 600px;
+		height: fit-content;
+		min-height: 100%;
+	}
+
+	.form-field-flex {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		max-height: 260px;
+	}
+
+	.form-textarea-flex {
+		flex: 1;
+		resize: none;
+		min-height: 0;
 	}
 
 	.form-field {
@@ -1763,10 +2091,6 @@
 		outline: none;
 		font-size: 0.875rem;
 		box-sizing: border-box;
-	}
-
-	.form-textarea {
-		resize: none;
 	}
 
 	.form-input:focus,
@@ -1853,6 +2177,7 @@
 		transition: background-color 0.2s;
 		border: none;
 		cursor: pointer;
+		flex-shrink: 0;
 	}
 
 	.submit-button:disabled {
@@ -1892,11 +2217,15 @@
 		height: 100%;
 		display: flex;
 		flex-direction: column;
+		width: 100%;
+		align-items: center;
 	}
 
 	.ticket-info-header {
 		padding: 1rem;
 		border-bottom: 1px solid;
+		width: 100%;
+		max-width: 800px;
 	}
 
 	.theme-fleety .ticket-info-header {
@@ -1968,6 +2297,9 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
+		width: 100%;
+		max-width: 800px;
+		align-self: center;
 	}
 
 	/* === System Messages === */
@@ -2177,6 +2509,9 @@
 	.message-input-area {
 		padding: 1rem;
 		border-top: 1px solid;
+		width: 100%;
+		max-width: 800px;
+		align-self: center;
 	}
 
 	.theme-fleety .message-input-area {
