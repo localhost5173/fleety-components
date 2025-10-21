@@ -64,14 +64,10 @@
 				return () => this.removeCallback(key, callback);
 			}
 
-			// Start a new connection
-			const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
-				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-				const backendUrl = "https://api.fleety.dev";
-				const wsUrl = `${protocol}//${backendUrl.replace(/^https?:\/\//, '')}/v1/tickets/${projectId}/${ticketSlug}/ws`;
-				const ws = new WebSocket(wsUrl);
-
-				ws.onopen = () => {
+		// Start a new connection
+		const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
+			const wsUrl = `wss://api.fleety.dev/v1/tickets/${projectId}/${ticketSlug}/ws`;
+			const ws = new WebSocket(wsUrl);				ws.onopen = () => {
 					console.log(`WebSocket connected for ticket: ${ticketSlug}`);
 					this.connections.set(key, ws);
 					this.reconnectAttempts.set(key, 0);
@@ -1619,7 +1615,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 0.5rem 0.75rem;
+		padding: 0.875rem 0.75rem;
 	}
 
 	.theme-fleety .widget-header {
