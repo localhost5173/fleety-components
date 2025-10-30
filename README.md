@@ -7,7 +7,6 @@ Currently available:
 - 🟢 `SupportTicket.svelte` — full-featured ticket system with message threads and status tracking.
 
 Coming soon:
-- ⚛️ React components (`.tsx`)
 - 🧩 Vue components (`.vue`)
 
 ---
@@ -56,7 +55,7 @@ FLEETY_PROJECT_ID=your-project-id
 <SupportChat theme="fleety" dockPosition="bottom-right" />
 ```
 
-Your app will now connect to your [Fleety](https://fleety.dev) backend (you can self-host or use the managed API).
+Your app will now connect to your [Fleety](https://fleety.dev) backend.
 
 ---
 
@@ -76,7 +75,7 @@ No API keys exposed in the browser. Everything is proxied safely.
 | Framework | Status |
 |------------|---------|
 | Svelte     | ✅ Available |
-| React      | 🚧 In progress |
+| React      | ✅ Available |
 | Vue        | 🚧 In progress |
 
 ---
