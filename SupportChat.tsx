@@ -1019,7 +1019,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
     dockPosition = 'bottom-right'
 }) => {
     // Fleety API Configuration
-    const API_URL = "http://localhost:8080/v1";
+    const API_URL = "https://api.fleety.dev/v1";
 
     // State for anonymous session
     const [anonToken, setAnonToken] = useState('');
@@ -1328,6 +1328,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
 
             let aiResponse = '';
             let messageId = Date.now().toString();
+            let isFirstChunk = true;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -1338,6 +1339,41 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 }
 
                 const chunk = decoder.decode(value, { stream: true });
+
+                // Check if first chunk is JSON (backend sent wrong content-type)
+                if (isFirstChunk && chunk.trim().startsWith('{')) {
+                    isFirstChunk = false;
+                    try {
+                        const jsonResponse: ToolResponse = JSON.parse(chunk);
+                        console.log('📦 Received JSON response (not SSE):', jsonResponse);
+                        
+                        if (jsonResponse.type === 'message' || jsonResponse.type === 'tool_call') {
+                            addAIMessage(jsonResponse.message);
+                            
+                            if (jsonResponse.type === 'tool_call' && jsonResponse.ticket_slug) {
+                                const event = new CustomEvent('ticket-created', {
+                                    detail: { ticketSlug: jsonResponse.ticket_slug },
+                                    bubbles: true,
+                                    composed: true
+                                });
+                                window.dispatchEvent(event);
+                                console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
+                            }
+                            
+                            setConversationHistory(prev => [...prev, {
+                                role: 'assistant',
+                                content: jsonResponse.message
+                            }]);
+                            
+                            setIsTyping(false);
+                            return;
+                        }
+                    } catch (e) {
+                        console.log('⚠️ First chunk looks like JSON but failed to parse, treating as SSE');
+                    }
+                }
+                
+                isFirstChunk = false;
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
