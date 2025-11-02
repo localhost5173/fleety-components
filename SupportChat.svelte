@@ -320,9 +320,14 @@
 
 			// Check if this is a tool call response (non-streaming)
 			const contentType = response.headers.get('content-type');
+			console.log('📋 Content-Type:', contentType);
+			
 			if (contentType?.includes('application/json')) {
 				// This is a tool call response
 				const toolResponse = await response.json();
+				console.log('📦 Tool response:', toolResponse);
+				console.log('📦 Response type:', toolResponse.type);
+				console.log('📦 Response message:', toolResponse.message);
 				
 				if (toolResponse.type === 'tool_call') {
 					// AI created a ticket
@@ -342,10 +347,14 @@
 					return;
 				} else if (toolResponse.type === 'message') {
 					// Regular message response
+					console.log('💬 Adding AI message:', toolResponse.message);
 					addAIMessage(toolResponse.message);
+					console.log('💬 Messages array after add:', messages);
 					isTyping = false;
 					return;
 				}
+				
+				console.log('⚠️ Unknown response type:', toolResponse.type);
 			}
 
 			// Read streaming response
@@ -379,6 +388,35 @@
 				chunkCount++;
 				
 				console.log(`Chunk ${chunkCount} raw:`, chunk);
+
+				// Check if this is a complete JSON response (not SSE format)
+				if (chunkCount === 1 && chunk.trim().startsWith('{')) {
+					try {
+						const jsonResponse = JSON.parse(chunk);
+						console.log('📦 Parsed JSON response:', jsonResponse);
+						
+						if (jsonResponse.type === 'message' && jsonResponse.message) {
+							addAIMessage(jsonResponse.message);
+							console.log('✅ Added message from JSON response');
+							isTyping = false;
+							return;
+						} else if (jsonResponse.type === 'tool_call') {
+							addAIMessage(jsonResponse.message);
+							// Dispatch event for ticket creation
+							const event = new CustomEvent('ticket-created', {
+								detail: { ticketSlug: jsonResponse.ticket_slug },
+								bubbles: true,
+								composed: true
+							});
+							window.dispatchEvent(event);
+							console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
+							isTyping = false;
+							return;
+						}
+					} catch (e) {
+						console.log('Not a complete JSON, treating as SSE stream');
+					}
+				}
 
 				const lines = chunk.split('\n');
 
