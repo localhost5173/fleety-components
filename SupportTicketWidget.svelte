@@ -69,8 +69,8 @@
 	// Non-reactive state
 	let scrollTimeouts: number[] = [];
 
-	// API Base URLs - hardcoded to production (match docs: include /v1)
-	const API_BASE = 'https://api.fleety.dev/v1';
+	// API Base URLs - hardcoded to production
+	const API_BASE = 'https://api.fleety.dev';
 	const WS_BASE = 'wss://api.fleety.dev/v1';
 	const TICKETS_STORAGE_KEY = `fleety_tickets_${projectId}`;
 
@@ -296,19 +296,18 @@
 		errorMessage = null;
 		successMessage = null;
 
-			try {
-				const response = await fetch(`${API_BASE}/tickets/${projectId}`, {
+		try {
+			const response = await fetch(`${API_BASE}/tickets`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
+					project_id: projectId,
 					title: newTicketTitle.trim(),
 					description: newTicketDescription.trim()
 				})
-			});
-
-			if (!response.ok) {
+			});			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({}));
 				const error = errorData.error || `HTTP ${response.status}`;
 
