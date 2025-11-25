@@ -70,7 +70,7 @@
 	let scrollTimeouts: number[] = [];
 
 	// API Base URLs - hardcoded to production
-	const API_BASE = 'https://api.fleety.dev';
+	const API_BASE = 'https://api.fleety.dev/v1';
 	const WS_BASE = 'wss://api.fleety.dev/v1';
 	const TICKETS_STORAGE_KEY = `fleety_tickets_${projectId}`;
 
