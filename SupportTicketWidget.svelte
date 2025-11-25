@@ -1,883 +1,715 @@
 <script lang="ts">
-	import { fade, fly } from 'svelte/transition';
-	import { onMount, onDestroy } from 'svelte';
+	import { marked } from 'marked';
+	import { untrack, onMount } from 'svelte';
 
-	// Component props
-	let {
-		projectId,
-		theme = 'fleety',
-		dockPosition = 'bottom-left',
-		onOpen = $bindable()
-	}: {
+	// Props
+	interface Props {
 		projectId: string;
-		theme?: 'fleety' | 'material' | 'midnight';
-		dockPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
-			onOpen?: (options?: { view?: 'list' | 'create' | 'view'; prefillDescription?: string; prefillTitle?: string }) => void;
-	} = $props();
-
-	// API Configuration
-	const API_URL = "https://api.fleety.dev/v1";
-
-	// === WebSocket Types and Service (Inlined) ===
-	type WSMessageType = 
-		| 'new_message' 
-		| 'status_change' 
-		| 'ticket_update' 
-		| 'error' 
-		| 'subscribed';
-
-	interface WSMessage {
-		type: WSMessageType;
-		payload: any;
+		dockPosition?: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
+		theme?: 'light' | 'dark' | 'system' | 'material' | 'nord' | 'fleety';
+		accentColor?: string;
 	}
 
-	type TicketWSCallback = (message: WSMessage) => void;
+	const { projectId, dockPosition = 'bottom-right', theme = 'light' }: Props = $props();
 
-	// WebSocket Service for managing ticket connections
-	class TicketWebSocketService {
-		private connections: Map<string, WebSocket> = new Map();
-		private callbacks: Map<string, Set<TicketWSCallback>> = new Map();
-		private reconnectAttempts: Map<string, number> = new Map();
-		private maxReconnectAttempts = 5;
-		private reconnectDelay = 1000; // Start with 1 second
-		private connecting: Map<string, Promise<WebSocket>> = new Map();
+	// Configure marked options
+	marked.setOptions({
+		breaks: true,
+		gfm: true
+	});
 
-		/**
-		 * Connect to a ticket's WebSocket for real-time updates
-		 */
-		connect(projectId: string, ticketSlug: string, callback: TicketWSCallback): () => void {
-			const key = `${projectId}/${ticketSlug}`;
-			
-			// Ensure a callback set exists
-			if (!this.callbacks.has(key)) {
-				this.callbacks.set(key, new Set());
-			}
-			this.callbacks.get(key)!.add(callback);
-
-			// If already connected, we're done
-			if (this.connections.has(key)) {
-				return () => this.removeCallback(key, callback);
-			}
-
-			// If connecting, wait for the existing connection promise
-			if (this.connecting.has(key)) {
-				return () => this.removeCallback(key, callback);
-			}
-
-		// Start a new connection
-		const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
-			const wsUrl = `wss://api.fleety.dev/v1/tickets/${projectId}/${ticketSlug}/ws`;
-			const ws = new WebSocket(wsUrl);				ws.onopen = () => {
-					console.log(`WebSocket connected for ticket: ${ticketSlug}`);
-					this.connections.set(key, ws);
-					this.reconnectAttempts.set(key, 0);
-					this.connecting.delete(key);
-					resolve(ws);
-				};
-
-				ws.onmessage = (event) => {
-					try {
-						const message: WSMessage = JSON.parse(event.data);
-						this.notifyCallbacks(key, message);
-					} catch (error) {
-						console.error('Error parsing WebSocket message:', error);
-					}
-				};
-
-				ws.onerror = (error) => {
-					console.error(`WebSocket error for ticket ${ticketSlug}:`, error);
-					this.connecting.delete(key);
-					reject(error);
-				};
-
-				ws.onclose = () => {
-					console.log(`WebSocket closed for ticket: ${ticketSlug}`);
-					this.connections.delete(key);
-					this.connecting.delete(key);
-					this.attemptReconnect(projectId, ticketSlug);
-				};
-			});
-
-			this.connecting.set(key, connectionPromise);
-
-			// Return unsubscribe function
-			return () => this.removeCallback(key, callback);
-		}
-
-		/**
-		 * Disconnect from a ticket's WebSocket
-		 */
-		disconnect(projectId: string, ticketSlug: string) {
-			const key = `${projectId}/${ticketSlug}`;
-			const ws = this.connections.get(key);
-			if (ws) {
-				// Prevent reconnection attempts when explicitly disconnecting
-				this.reconnectAttempts.delete(key);
-				ws.close();
-				this.connections.delete(key);
-				this.callbacks.delete(key);
-			}
-		}
-
-		/**
-		 * Disconnect all WebSocket connections
-		 */
-		disconnectAll() {
-			this.connections.forEach((ws) => ws.close());
-			this.connections.clear();
-			this.callbacks.clear();
-			this.reconnectAttempts.clear();
-			this.connecting.clear();
-		}
-
-		/**
-		 * Send a message through the WebSocket
-		 */
-		send(projectId: string, ticketSlug: string, message: any) {
-			const key = `${projectId}/${ticketSlug}`;
-			const ws = this.connections.get(key);
-			if (ws && ws.readyState === WebSocket.OPEN) {
-				ws.send(JSON.stringify(message));
-			}
-		}
-
-		private removeCallback(key: string, callback: TicketWSCallback) {
-			const callbacks = this.callbacks.get(key);
-			if (callbacks) {
-				callbacks.delete(callback);
-				// If no more callbacks are listening, close the connection
-				if (callbacks.size === 0) {
-					const ws = this.connections.get(key);
-					if (ws) {
-						this.reconnectAttempts.delete(key);
-						ws.close();
-						this.connections.delete(key);
-						this.callbacks.delete(key);
-					}
-				}
-			}
-		}
-
-		private notifyCallbacks(key: string, message: WSMessage) {
-			const callbacks = this.callbacks.get(key);
-			if (callbacks) {
-				callbacks.forEach(callback => callback(message));
-			}
-		}
-
-		private attemptReconnect(projectId: string, ticketSlug: string) {
-			const key = `${projectId}/${ticketSlug}`;
-			const attempts = this.reconnectAttempts.get(key) || 0;
-			
-			if (attempts >= this.maxReconnectAttempts) {
-				console.log(`Max reconnection attempts reached for ticket: ${ticketSlug}`);
-				this.reconnectAttempts.delete(key);
-				return;
-			}
-
-			const callbacks = this.callbacks.get(key);
-			if (!callbacks || callbacks.size === 0) {
-				// No one is listening anymore, don't reconnect
-				this.reconnectAttempts.delete(key);
-				return;
-			}
-
-			const delay = this.reconnectDelay * Math.pow(2, attempts); // Exponential backoff
-			console.log(`Reconnecting to ticket ${ticketSlug} in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
-
-			setTimeout(() => {
-				this.reconnectAttempts.set(key, attempts + 1);
-				
-				// Re-establish connection with existing callbacks
-				const existingCallbacks = Array.from(callbacks);
-				this.callbacks.delete(key);
-				
-				existingCallbacks.forEach(callback => {
-					this.connect(projectId, ticketSlug, callback);
-				});
-			}, delay);
-		}
+	// Types
+	interface TicketMessage {
+		id: string;
+		author: 'user' | 'admin';
+		content: string;
+		timestamp: string;
+		read_by: string[];
 	}
-
-	// Create singleton instance for this component
-	const ticketWS = new TicketWebSocketService();
 
 	interface Ticket {
 		id: string;
 		slug: string;
-		title: string;
-		description: string;
-		status: 'open' | 'in_progress' | 'resolved' | 'closed';
-		created_at: string;
-		updated_at: string;
-		created_by_ai: boolean;
-		messages: TicketMessage[];
-	}
-
-	interface TicketMessage {
-		id: string;
-		author: 'user' | 'admin' | 'system';
-		content: string;
-		timestamp: string;
-		read_by: ('user' | 'admin')[]; // Array of who has read this message
-		type?: 'message' | 'status_change';
-		metadata?: {
-			old_status?: string;
-			new_status?: string;
-		};
-	}
-
-	interface CreateTicketRequest {
 		project_id: string;
 		title: string;
 		description: string;
-		public_key?: string;
+		status: 'open' | 'closed';
+		created_at: string;
+		messages: TicketMessage[];
 	}
 
-	interface AddMessageRequest {
-		author: 'user' | 'admin';
-		content: string;
-	}
+	// Check if running in browser
+	let isBrowser = $state(typeof window !== 'undefined');
 
-	interface UpdateTicketRequest {
-		status: 'open' | 'in_progress' | 'resolved' | 'closed';
-	}
-
-	/**
-	 * Create a new support ticket (public, no auth required)
-	 */
-	async function createTicket(data: CreateTicketRequest): Promise<Ticket> {
-		const response = await fetch(`${API_URL}/tickets`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(data)
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			// Handle rate limiting
-			if (response.status === 429) {
-				const retryAfter = response.headers.get('Retry-After');
-				const retryMessage = retryAfter 
-					? `Please wait ${retryAfter} seconds before creating another ticket.`
-					: 'Please wait before creating another ticket.';
-				throw new Error(`rate_limit:${result.message || 'You\'re creating tickets too fast.'} ${retryMessage}`);
-			}
-			// Handle insufficient credits
-			if (response.status === 402) {
-				throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
-			}
-			throw new Error(result.error || 'Failed to create ticket');
-		}
-
-		return result;
-	}
-
-	/**
-	 * Get a ticket by its slug (public, no auth required, rate-limited)
-	 * If token is provided, bypasses rate limiting
-	 */
-	async function getTicket(slug: string, token?: string): Promise<Ticket> {
-		const headers: Record<string, string> = {};
-		if (token) {
-			headers['Authorization'] = `Bearer ${token}`;
-		}
-
-		const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}`, { headers });
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			// Handle rate limiting
-			if (response.status === 429) {
-				const retryAfter = response.headers.get('Retry-After');
-				const retryMessage = retryAfter 
-					? `Please wait ${retryAfter} seconds before trying again.`
-					: 'Please wait before trying again.';
-				throw new Error(`rate_limit:${result.message || 'You\'re sending requests too fast.'} ${retryMessage}`);
-			}
-			// Handle insufficient credits
-			if (response.status === 402) {
-				throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
-			}
-			throw new Error(result.error || 'Failed to fetch ticket');
-		}
-
-		return result;
-	}
-
-	/**
-	 * Add a message to a ticket (public, no auth required, rate-limited)
-	 * If token is provided, bypasses rate limiting
-	 */
-	async function addMessage(slug: string, data: AddMessageRequest, token?: string): Promise<void> {
-		const headers: Record<string, string> = {
-			'Content-Type': 'application/json'
-		};
-		if (token) {
-			headers['Authorization'] = `Bearer ${token}`;
-		}
-
-		const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}/messages`, {
-			method: 'POST',
-			headers,
-			body: JSON.stringify(data)
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			// Handle rate limiting
-			if (response.status === 429) {
-				const retryAfter = response.headers.get('Retry-After');
-				const retryMessage = retryAfter 
-					? `Please wait ${retryAfter} seconds before sending another message.`
-					: 'Please wait before sending another message.';
-				throw new Error(`rate_limit:${result.message || 'You\'re sending messages too fast.'} ${retryMessage}`);
-			}
-			// Handle insufficient credits
-			if (response.status === 402) {
-				throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
-			}
-			throw new Error(result.error || 'Failed to add message');
-		}
-	}
-
-	/**
-	 * List all tickets for a project (admin only, requires auth)
-	 */
-	async function listTickets(projectId: string, token: string): Promise<Ticket[]> {
-		const response = await fetch(`${API_URL}/projects/${projectId}/tickets`, {
-			headers: {
-				'Authorization': `Bearer ${token}`
-			}
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			throw new Error(result.error || 'Failed to fetch tickets');
-		}
-
-		return result.tickets || [];
-	}
-
-	/**
-	 * Update ticket status (admin only, requires auth)
-	 */
-	async function updateTicketStatus(
-		ticketId: string,
-		status: UpdateTicketRequest['status'],
-		token: string
-	): Promise<void> {
-		const response = await fetch(`${API_URL}/tickets/${ticketId}`, {
-			method: 'PATCH',
-			headers: {
-				'Authorization': `Bearer ${token}`,
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ status })
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			throw new Error(result.error || 'Failed to update ticket');
-		}
-	}
-
-	/**
-	 * Delete a ticket (admin only, requires auth)
-	 */
-	async function deleteTicket(ticketId: string, token: string): Promise<void> {
-		const response = await fetch(`${API_URL}/tickets/${ticketId}`, {
-			method: 'DELETE',
-			headers: {
-				'Authorization': `Bearer ${token}`
-			}
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			throw new Error(result.error || 'Failed to delete ticket');
-		}
-	}
-
-	/**
-	 * Mark all messages in a ticket as read by a specific reader (user or admin)
-	 */
-	async function markMessagesAsRead(slug: string, reader: 'user' | 'admin'): Promise<void> {
-		const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}/messages/read`, {
-			method: 'PATCH',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ reader })
-		});
-
-		const result = await response.json();
-
-		if (!response.ok) {
-			throw new Error(result.error || 'Failed to mark messages as read');
-		}
-	}
-
-	// UI State
+	// State
 	let isOpen = $state(false);
-	let currentView = $state<'list' | 'create' | 'view'>('create');
-	
-	// Ticket Creation
-	let title = $state('');
-	let description = $state('');
-	let isCreating = $state(false);
-	let createError = $state('');
-
-	// Ticket Viewing
-	let currentTicket = $state<Ticket | null>(null);
-	let ticketSlug = $state('');
-	let messageContent = $state('');
-	let isSendingMessage = $state(false);
-	let messageError = $state('');
-	let isLoadingTicket = $state(false);
-	let ticketError = $state('');
-
-	// Saved tickets (stored in localStorage)
-	let savedTickets = $state<Array<{ slug: string; title: string; status: string; unreadCount?: number }>>([]);
-
-	// Calculate total unread messages across all tickets
-	let totalUnreadCount = $derived(savedTickets.reduce((sum, ticket) => sum + (ticket.unreadCount || 0), 0));
-
-	// Chat dimensions
-	let chatWidth = $state(380);
-	let chatHeight = $state(500);
-	let minWidth = 320;
-	let maxWidth = 600;
-	let minHeight = 400;
-	let maxHeight = 700;
-	let isResizing = $state(false);
-	let isFullscreen = $state(false);
+	let activeView = $state<'list' | 'create' | 'view'>('list');
+	let tickets = $state<Ticket[]>([]);
+	let selectedTicket = $state<Ticket | null>(null);
+	let messageInput = $state('');
+	let newTicketTitle = $state('');
+	let newTicketDescription = $state('');
+	let isLoading = $state(false);
+	let activeTheme = $state(theme);
+	let errorMessage = $state<string | null>(null);
+	let successMessage = $state<string | null>(null);
+	let messagesContainer = $state<HTMLDivElement | null>(null);
 
 	// WebSocket
-	let wsUnsubscribe = $state<(() => void) | null>(null);
-	let wsUnsubscribes = $state(new Map<string, () => void>()); // Track all active WS connections
+	let ws = $state<WebSocket | null>(null);
+	let wsReconnectAttempts = $state(0);
+	let wsReconnectTimeout: number | null = null;
 
-	// Auto-scroll
-	let messagesEndRef = $state<HTMLDivElement>();
+	// Rate limiting state
+	let isRateLimited = $state(false);
+	let rateLimitMessage = $state<string | null>(null);
+	let rateLimitCooldown = $state(0);
+	let rateLimitTimer: number | null = null;
 
-	// No theme configuration needed - using CSS classes
-	
-	// Responsive positioning - account for sidebar on desktop
-	let isMobile = $state(false);
+	// Non-reactive state
+	let scrollTimeouts: number[] = [];
 
+	// API Base URLs - hardcoded to production (match docs: include /v1)
+	const API_BASE = 'https://api.fleety.dev/v1';
+	const WS_BASE = 'wss://api.fleety.dev/v1';
+	const TICKETS_STORAGE_KEY = `fleety_tickets_${projectId}`;
+
+	// Debug: Log the URLs being used
+
+	// Load tickets from localStorage on mount
 	onMount(() => {
-		// Check mobile on mount
-		const checkMobile = () => {
-			isMobile = window.innerWidth < 768;
-		};
-		checkMobile();
-		window.addEventListener('resize', checkMobile);
-		
-		// Continue with existing onMount logic
-		loadSavedTickets();
-		// Connect WebSocket for all saved tickets on mount
-		connectAllTicketWebSockets();
-		
-		// Listen for ticket creation events from SupportChat
-		const handleTicketCreated = (event: CustomEvent<{ ticketSlug: string }>) => {
-			console.log('🎫 SupportTicketWidget received ticket-created event:', event.detail.ticketSlug);
-			
-			// Open the widget
-			isOpen = true;
-			
-			// Load the ticket
-			handleLoadTicket(event.detail.ticketSlug);
-		};
-		
-		window.addEventListener('ticket-created', handleTicketCreated as EventListener);
-		
-		// Close widget when clicking outside
-		const handleClickOutside = (event: MouseEvent) => {
-			const target = event.target as Element;
-			if (isOpen && target && !target.closest('.ticket-widget') && !target.closest('.ticket-fab')) {
-				isOpen = false;
-			}
-		};
-		
-		document.addEventListener('click', handleClickOutside);
-		
-		// Cleanup listeners on component destroy
-		return () => {
-			window.removeEventListener('ticket-created', handleTicketCreated as EventListener);
-			window.removeEventListener('resize', checkMobile);
-			document.removeEventListener('click', handleClickOutside);
-		};
-	});
+		if (typeof window === 'undefined') return;
 
-	onDestroy(() => {
-		if (wsUnsubscribe) {
-			wsUnsubscribe();
-		}
-		// Disconnect all background WebSocket connections
-		disconnectAllTicketWebSockets();
-	});
-
-	function loadSavedTickets() {
-		const saved = localStorage.getItem('supportTickets');
-		if (saved) {
-			savedTickets = JSON.parse(saved);
-		}
-	}
-
-	// Connect WebSocket for all saved tickets to receive updates in background
-	function connectAllTicketWebSockets() {
-		savedTickets.forEach(ticket => {
-			if (!wsUnsubscribes.has(ticket.slug)) {
-				const unsubscribe = ticketWS.connect(projectId, ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
-				wsUnsubscribes.set(ticket.slug, unsubscribe);
-			}
-		});
-	}
-
-	// Disconnect all background WebSocket connections
-	function disconnectAllTicketWebSockets() {
-		wsUnsubscribes.forEach((unsubscribe) => unsubscribe());
-		wsUnsubscribes.clear();
-	}
-
-	// Handle WebSocket messages for background tickets (not currently viewing)
-	async function handleBackgroundWebSocketMessage(ticketSlug: string, message: WSMessage) {
-		// If this is the currently open ticket AND the widget is open, let the main handler deal with it
-		if (isOpen && currentTicket && currentTicket.slug === ticketSlug && currentView === 'view') {
-			return;
-		}
-
-		// Update the ticket in the saved list based on the WebSocket message
-		switch (message.type) {
-			case 'ticket_update':
-			case 'new_message':
-			case 'status_change':
+		const storedTickets = localStorage.getItem(TICKETS_STORAGE_KEY);
+		if (storedTickets) {
 				try {
-					const updated = await getTicket(ticketSlug);
-					const unreadCount = updated.messages.filter(msg => 
-						msg.author === 'admin' && !msg.read_by?.includes('user')
-					).length;
-					
-					// Update the ticket in the list
-					savedTickets = savedTickets.map(t => 
-						t.slug === ticketSlug 
-							? { ...t, status: updated.status, unreadCount } 
-							: t
-					);
-					localStorage.setItem('supportTickets', JSON.stringify(savedTickets));
-				} catch (err) {
-					console.error('Error refreshing background ticket:', err);
-				}
-				break;
-		}
-	}
-
-	function saveTicketToList(ticket: Ticket) {
-		// Count unread admin messages (not read by user)
-		const unreadCount = ticket.messages.filter(msg => 
-			msg.author === 'admin' && !msg.read_by?.includes('user')
-		).length;
-		
-		const ticketInfo = {
-			slug: ticket.slug,
-			title: ticket.title,
-			status: ticket.status,
-			unreadCount
-		};
-		
-		savedTickets = [ticketInfo, ...savedTickets.filter(t => t.slug !== ticket.slug)];
-		localStorage.setItem('supportTickets', JSON.stringify(savedTickets));
-
-		// Ensure WebSocket connection for this ticket (for background updates)
-		if (!wsUnsubscribes.has(ticket.slug)) {
-			const unsubscribe = ticketWS.connect(projectId, ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
-			wsUnsubscribes.set(ticket.slug, unsubscribe);
-		}
-	}
-
-	function scrollToBottom() {
-		setTimeout(() => {
-			if (messagesEndRef) {
-				messagesEndRef.scrollIntoView({ behavior: 'smooth' });
+					tickets = JSON.parse(storedTickets);
+				} catch (e) {
+				console.error('❌ Failed to parse stored tickets:', e);
 			}
-		}, 100);
-	}
-
-	async function handleCreateTicket() {
-		if (!title.trim() || !description.trim()) {
-			createError = 'Please fill in all fields';
-			return;
 		}
 
-		isCreating = true;
-		createError = '';
+		// Cleanup
+		return () => {
+			scrollTimeouts.forEach((timeout) => clearTimeout(timeout));
+			scrollTimeouts = [];
+			if (ws) {
+				ws.close();
+				ws = null;
+			}
+			// Close all background WebSocket connections
+			wsConnections.forEach((connection) => connection.close());
+			wsConnections.clear();
+			if (wsReconnectTimeout) {
+				clearTimeout(wsReconnectTimeout);
+				wsReconnectTimeout = null;
+			}
+			if (rateLimitTimer) {
+				clearInterval(rateLimitTimer);
+				rateLimitTimer = null;
+			}
+		};
+	});
+
+	// Theme detection for system theme
+	$effect(() => {
+		if (theme === 'system') {
+			const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+			activeTheme = mediaQuery.matches ? 'dark' : 'light';
+
+			const handleChange = (e: MediaQueryListEvent) => {
+				activeTheme = e.matches ? 'dark' : 'light';
+			};
+
+			mediaQuery.addEventListener('change', handleChange);
+			return () => mediaQuery.removeEventListener('change', handleChange);
+		} else {
+			activeTheme = theme;
+		}
+	});
+
+	// Get position styles
+	const getPositionStyles = (): string => {
+		switch (dockPosition) {
+			case 'bottom-left':
+				return 'bottom: 20px; left: 20px;';
+			case 'bottom-right':
+				return 'bottom: 20px; right: 20px;';
+			case 'top-left':
+				return 'top: 20px; left: 20px;';
+			case 'top-right':
+				return 'top: 20px; right: 20px;';
+			default:
+				return 'bottom: 20px; right: 20px;';
+		}
+	};
+
+	// Save tickets to localStorage
+	function saveTicketsToStorage() {
+		if (typeof window !== 'undefined') {
+			localStorage.setItem(TICKETS_STORAGE_KEY, JSON.stringify(tickets));
+		}
+	}
+
+	// Handle rate limit errors
+	function handleRateLimitError(errorMsg: string) {
+		isRateLimited = true;
+
+		// Parse rate limit info from error message
+		if (errorMsg.includes('3 tickets per hour')) {
+			rateLimitMessage = 'Rate limit: Maximum 3 tickets per hour. Please try again later.';
+			rateLimitCooldown = 60; // 60 minutes
+		} else if (errorMsg.includes('6 messages per minute')) {
+			rateLimitMessage = 'Rate limit: Maximum 6 messages per minute. Please slow down.';
+			rateLimitCooldown = 1; // 1 minute
+		} else if (errorMsg.toLowerCase().includes('rate limit')) {
+			rateLimitMessage = errorMsg;
+			rateLimitCooldown = 1; // Default 1 minute
+		} else {
+			return false; // Not a rate limit error
+		}
+
+		// Start countdown timer
+		let secondsLeft = rateLimitCooldown * 60;
+		if (rateLimitTimer) {
+			clearInterval(rateLimitTimer);
+		}
+
+		rateLimitTimer = window.setInterval(() => {
+			secondsLeft--;
+			if (secondsLeft <= 0) {
+				isRateLimited = false;
+				rateLimitMessage = null;
+				rateLimitCooldown = 0;
+				if (rateLimitTimer) {
+					clearInterval(rateLimitTimer);
+					rateLimitTimer = null;
+				}
+			}
+		}, 1000);
+
+		return true;
+	}
+
+	// Format cooldown time for display
+	function formatCooldownTime(): string {
+		if (!rateLimitCooldown) return '';
+
+		const totalSeconds = rateLimitCooldown * 60;
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+
+		if (minutes > 0) {
+			return `${minutes}m ${seconds}s`;
+		}
+		return `${seconds}s`;
+	}
+
+	// Connect to WebSocket for a ticket
+	function connectWebSocket(ticketSlug: string) {
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+
+	const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
 
 		try {
-			const ticket = await createTicket({
-				project_id: projectId,
-				title: title.trim(),
-				description: description.trim()
+			ws = new WebSocket(wsUrl);
+
+			ws.onopen = () => {
+				wsReconnectAttempts = 0;
+			};
+
+			ws.onmessage = (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					// message received
+
+					if (data.type === 'new_message') {
+						// Refresh ticket to get the new message
+						refreshTicket(ticketSlug);
+					} else if (data.type === 'status_change') {
+						// Refresh ticket to get status update
+						refreshTicket(ticketSlug);
+					} else if (data.type === 'ticket_update') {
+						// Refresh ticket to get the full update (handles admin messages)
+						refreshTicket(ticketSlug);
+					} else if (data.type === 'subscribed') {
+					} else if (data.type === 'error') {
+						console.error('❌ [WebSocket] Server error:', data.payload);
+						// Don't close connection on error, server will close if needed
+					} else {
+					}
+				} catch (e) {
+					console.error('❌ [WebSocket] Failed to parse message:', e);
+				}
+			};
+			ws.onerror = (error) => {
+				console.error('❌ WebSocket error:', error);
+			};
+
+			ws.onclose = () => {
+				ws = null;
+
+				// Attempt to reconnect with exponential backoff
+				if (selectedTicket && selectedTicket.slug === ticketSlug && wsReconnectAttempts < 5) {
+					wsReconnectAttempts++;
+					const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts), 30000);
+
+					wsReconnectTimeout = window.setTimeout(() => {
+						connectWebSocket(ticketSlug);
+					}, delay);
+				}
+			};
+		} catch (error) {
+			console.error('❌ Failed to create WebSocket:', error);
+		}
+	}
+
+	// Auto-scroll to bottom
+	function autoScroll() {
+		const timeoutId = window.setTimeout(() => {
+			if (messagesContainer) {
+				messagesContainer.scrollTop = messagesContainer.scrollHeight;
+			}
+			scrollTimeouts = scrollTimeouts.filter((id) => id !== timeoutId);
+		}, 100);
+		scrollTimeouts.push(timeoutId);
+	}
+
+	// Create a new ticket
+	async function createTicket() {
+		if (!newTicketTitle.trim() || !newTicketDescription.trim() || isLoading) return;
+
+		// Check if rate limited
+		if (isRateLimited) {
+			errorMessage =
+				rateLimitMessage || 'Rate limit active. Please wait before creating another ticket.';
+			setTimeout(() => {
+				errorMessage = null;
+			}, 3000);
+			return;
+		}
+
+		isLoading = true;
+		errorMessage = null;
+		successMessage = null;
+
+			try {
+				const response = await fetch(`${API_BASE}/tickets/${projectId}`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					title: newTicketTitle.trim(),
+					description: newTicketDescription.trim()
+				})
 			});
 
-			saveTicketToList(ticket);
-			currentTicket = ticket;
-			currentView = 'view';
-			title = '';
-			description = '';
-			// Connect to WebSocket for real-time updates
-			wsUnsubscribe = ticketWS.connect(projectId, ticket.slug, handleWebSocketMessage);
-		} catch (error: any) {
-			// Display user-friendly rate limit message
-			const errorMsg = error.message || 'Failed to create ticket';
-			createError = errorMsg.includes('rate_limit:') 
-				? '⏰ ' + errorMsg.replace('rate_limit:', '')
-				: errorMsg.includes('credits_depleted:')
-				? '💳 ' + errorMsg.replace('credits_depleted:', '')
-				: errorMsg;
-		} finally {
-			isCreating = false;
-		}
-	}
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({}));
+				const error = errorData.error || `HTTP ${response.status}`;
 
-	async function handleLoadTicket(slug: string) {
-		if (!slug.trim()) return;
-		
-		// Unsubscribe from previous ticket
-		if (wsUnsubscribe) {
-			wsUnsubscribe();
-			wsUnsubscribe = null;
-		}
-
-		isLoadingTicket = true;
-		ticketError = '';
-
-		try {
-			const ticket = await getTicket(slug.trim());
-			currentTicket = ticket;
-			currentView = 'view';
-			
-			// Save ticket to localStorage (if new, it will be added to the list)
-			saveTicketToList(ticket);
-			
-			// Mark all admin messages as read by user
-			try {
-				await markMessagesAsRead(slug.trim(), 'user');
-				// Refresh to get updated read_by status
-				const refreshed = await getTicket(slug.trim());
-				currentTicket = refreshed;
-				// Update saved tickets with zero unread count
-				savedTickets = savedTickets.map(t => 
-					t.slug === slug.trim() ? { ...t, unreadCount: 0, status: refreshed.status } : t
-				);
-				localStorage.setItem('supportTickets', JSON.stringify(savedTickets));
-			} catch (readErr) {
-				console.error('Error marking messages as read:', readErr);
+				// Handle rate limit errors
+				if (response.status === 429 || handleRateLimitError(error)) {
+					errorMessage = rateLimitMessage || error;
+				} else {
+					throw new Error(error);
+				}
+				return;
 			}
-			
-			// Subscribe to WebSocket updates for the active ticket
-			wsUnsubscribe = ticketWS.connect(projectId, slug.trim(), handleWebSocketMessage);
-			
-			// Scroll to bottom after loading
-			scrollToBottom();
-		} catch (error: any) {
-			// Display user-friendly rate limit message
-			const errorMsg = error.message || 'Failed to load ticket';
-			ticketError = errorMsg.includes('rate_limit:') 
-				? '⏰ ' + errorMsg.replace('rate_limit:', '')
-				: errorMsg.includes('credits_depleted:')
-				? '💳 ' + errorMsg.replace('credits_depleted:', '')
-				: errorMsg;
+
+			const newTicket: Ticket = await response.json();
+
+			// Add to tickets array
+			tickets = [newTicket, ...tickets];
+			saveTicketsToStorage();
+
+			// Clear form
+			newTicketTitle = '';
+			newTicketDescription = '';
+
+			// Show success message
+			successMessage = `Ticket #${newTicket.slug} created successfully!`;
+			setTimeout(() => {
+				successMessage = null;
+			}, 3000);
+
+			// Load the ticket (which will connect WebSocket)
+			await loadTicket(newTicket.slug);
+		} catch (error) {
+			console.error('❌ Create ticket error:', error);
+			errorMessage = error instanceof Error ? error.message : 'Failed to create ticket';
+			setTimeout(() => {
+				errorMessage = null;
+			}, 5000);
 		} finally {
-			isLoadingTicket = false;
+			isLoading = false;
 		}
 	}
 
-	function handleWebSocketMessage(message: WSMessage) {
-		if (!currentTicket) return;
+	// Load ticket details
+	async function loadTicket(slug: string) {
+		isLoading = true;
+		errorMessage = null;
 
-		console.log('WebSocket message received:', message);
+			try {
+				const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
 
-		switch (message.type) {
-			case 'ticket_update':
-				// Full ticket update
-				currentTicket = message.payload as Ticket;
-				saveTicketToList(currentTicket);
-				scrollToBottom();
-				// Mark as read since we're viewing the ticket
-				markMessagesAsRead(currentTicket.slug, 'user').catch(err => 
-					console.error('Error marking messages as read:', err)
-				);
-				break;
-			
-			case 'new_message':
-				// New message added - refresh ticket
-				refreshCurrentTicket();
-				break;
-			
-			case 'status_change':
-				// Status changed - refresh ticket
-				refreshCurrentTicket();
-				break;
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({}));
+				const error = errorData.error || `HTTP ${response.status}`;
+
+				// Check if it's a rate limit error
+				if (response.status === 429 || error.toLowerCase().includes('rate limit')) {
+					handleRateLimitError(error);
+					return;
+				}
+
+				throw new Error(error);
+			}
+
+			const ticketData: Ticket = await response.json();
+
+			selectedTicket = ticketData;
+
+			// Update in tickets array
+			untrack(() => {
+				const ticketIndex = tickets.findIndex((t) => t.slug === slug);
+				if (ticketIndex !== -1) {
+					tickets[ticketIndex] = ticketData;
+					tickets = [...tickets];
+				} else {
+					// Add to tickets array if not present
+					tickets = [ticketData, ...tickets];
+				}
+				saveTicketsToStorage();
+			});
+
+			// Close background WebSocket for this ticket since we're viewing it
+			const bgWs = wsConnections.get(slug);
+			if (bgWs) {
+				bgWs.close();
+				wsConnections.delete(slug);
+			}
+
+			// Connect to WebSocket for real-time updates
+			connectWebSocket(slug);
+
+			// Mark messages as read
+			setTimeout(() => markMessagesAsRead(slug), 500);
+
+			// Auto-scroll
+			autoScroll();
+
+			activeView = 'view';
+		} catch (error) {
+			console.error('❌ Load ticket error:', error);
+			errorMessage = error instanceof Error ? error.message : 'Failed to load ticket';
+			setTimeout(() => {
+				errorMessage = null;
+			}, 5000);
+		} finally {
+			isLoading = false;
 		}
 	}
 
-	async function refreshCurrentTicket() {
-		if (!currentTicket) return;
-		
-		try {
-			const updated = await getTicket(currentTicket.slug);
-			currentTicket = updated;
-			saveTicketToList(updated);
-			scrollToBottom();
-			// Mark as read since we're viewing the ticket
-			await markMessagesAsRead(currentTicket.slug, 'user');
-			// Update unread count to 0 in saved tickets
-			savedTickets = savedTickets.map(t => 
-				t.slug === currentTicket!.slug ? { ...t, unreadCount: 0 } : t
-			);
-			localStorage.setItem('supportTickets', JSON.stringify(savedTickets));
-		} catch (err) {
-			console.error('Error refreshing ticket:', err);
+	// Send message to ticket
+	async function sendMessage() {
+		if (!messageInput.trim() || !selectedTicket || isLoading) return;
+
+		// Check if rate limited
+		if (isRateLimited) {
+			errorMessage =
+				rateLimitMessage || 'Rate limit active. Please wait before sending another message.';
+			setTimeout(() => {
+				errorMessage = null;
+			}, 3000);
+			return;
 		}
-	}
 
-	async function handleSendMessage() {
-		if (!messageContent.trim() || !currentTicket) return;
+		const content = messageInput.trim();
+		messageInput = '';
+		isLoading = true;
+		errorMessage = null;
 
-		isSendingMessage = true;
-		messageError = '';
-
-		// Store the message content before clearing
-		const userMessage = messageContent.trim();
-		
-		// Optimistically add message to UI immediately
+		// Optimistic update
+		const optimisticId = 'temp-' + Date.now();
 		const optimisticMessage: TicketMessage = {
-			id: `temp-${Date.now()}`,
+			id: optimisticId,
 			author: 'user',
-			content: userMessage,
+			content: content,
 			timestamp: new Date().toISOString(),
 			read_by: ['user']
 		};
-		
-		currentTicket.messages = [...currentTicket.messages, optimisticMessage];
-		messageContent = '';
-		scrollToBottom();
+
+		const previousSelectedTicket = { ...selectedTicket };
+
+		// Update UI immediately
+		selectedTicket = {
+			...selectedTicket,
+			messages: [...selectedTicket.messages, optimisticMessage]
+		};
+
+		// Update in tickets array (but don't save to storage to avoid persisting temp ID)
+		untrack(() => {
+			const ticketIndex = tickets.findIndex((t) => t.slug === selectedTicket!.slug);
+			if (ticketIndex !== -1 && selectedTicket) {
+				tickets[ticketIndex] = { ...selectedTicket };
+				tickets = [...tickets];
+			}
+		});
+
+		// Auto-scroll
+		autoScroll();
 
 		try {
-			await addMessage(currentTicket.slug, {
-				author: 'user',
-				content: userMessage
+			const response = await fetch(
+				`${API_BASE}/tickets/${projectId}/${selectedTicket.slug}/messages`,
+				{
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({
+						author: 'user',
+						content: content
+					})
+				}
+			);
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({}));
+				const error = errorData.error || `HTTP ${response.status}`;
+
+				// Handle rate limit errors
+				if (response.status === 429 || handleRateLimitError(error)) {
+					errorMessage = rateLimitMessage || error;
+					messageInput = content; // Restore message
+
+					// Revert optimistic update
+					selectedTicket = previousSelectedTicket;
+					untrack(() => {
+						const ticketIndex = tickets.findIndex((t) => t.slug === previousSelectedTicket.slug);
+						if (ticketIndex !== -1) {
+							tickets[ticketIndex] = previousSelectedTicket;
+							tickets = [...tickets];
+						}
+					});
+				} else {
+					throw new Error(error);
+				}
+				return;
+			}
+
+			// message sent
+
+			// Reload ticket to get the new message (replaces optimistic one)
+			await loadTicket(selectedTicket.slug);
+		} catch (error) {
+			console.error('❌ Send message error:', error);
+			errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+			messageInput = content; // Restore message
+
+			// Revert optimistic update
+			selectedTicket = previousSelectedTicket;
+			untrack(() => {
+				const ticketIndex = tickets.findIndex((t) => t.slug === selectedTicket!.slug);
+				if (ticketIndex !== -1 && selectedTicket) {
+					tickets[ticketIndex] = { ...selectedTicket };
+					tickets = [...tickets];
+				}
 			});
 
-			// WebSocket will replace the optimistic message with the real one
-			// Scroll to bottom after sending
-			scrollToBottom();
-		} catch (error: any) {
-			// Remove optimistic message on error
-			currentTicket.messages = currentTicket.messages.filter(m => m.id !== optimisticMessage.id);
-			// Restore message content so user can try again
-			messageContent = userMessage;
-			
-			// Display user-friendly rate limit message
-			const errorMsg = error.message || 'Failed to send message';
-			messageError = errorMsg.includes('rate_limit:') 
-				? '⏰ ' + errorMsg.replace('rate_limit:', '')
-				: errorMsg.includes('credits_depleted:')
-				? '💳 ' + errorMsg.replace('credits_depleted:', '')
-				: errorMsg;
+			setTimeout(() => {
+				errorMessage = null;
+			}, 5000);
 		} finally {
-			isSendingMessage = false;
+			isLoading = false;
 		}
 	}
 
-	function handleClose() {
-		isOpen = false;
-		// Disconnect only the active ticket's WebSocket (the one being viewed)
-		if (wsUnsubscribe) {
-			wsUnsubscribe();
-			wsUnsubscribe = null;
+	// Mark messages as read
+	async function markMessagesAsRead(slug: string) {
+		try {
+			await fetch(`${API_BASE}/tickets/${projectId}/${slug}/messages/read`, {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					reader: 'user'
+				})
+			});
+		} catch (error) {
+			console.error('❌ Mark as read error:', error);
 		}
-		// Keep background WebSocket connections active for notifications
 	}
 
-	// Watch for isOpen changes to handle WebSocket cleanup
-	$effect(() => {
-		if (!isOpen && wsUnsubscribe) {
-			wsUnsubscribe();
-			wsUnsubscribe = null;
-		}
-	});
-
-
-	function handleOpen(options?: { view?: 'list' | 'create' | 'view'; prefillDescription?: string; prefillTitle?: string }) {
-	   isOpen = true;
-	   // Set the view if specified
-	   if (options?.view) {
-		   currentView = options.view;
-	   }
-	   // Prefill description if specified
-	   if (options?.prefillDescription) {
-		   description = options.prefillDescription;
-	   }
-	   // Prefill title if specified
-	   if (options?.prefillTitle) {
-		   title = options.prefillTitle;
-	   }
-	   // Refresh unread counts when widget opens
-	   refreshUnreadCounts();
-	   if (currentView === 'view' && currentTicket && !wsUnsubscribe) {
-		   // Reconnect WebSocket if needed
-		   wsUnsubscribe = ticketWS.connect(projectId, currentTicket.slug, handleWebSocketMessage);
-	   }
-	}
-
-	// Expose handleOpen via bindable
-	onOpen = handleOpen;
-
-	// Refresh unread counts for all saved tickets
-	async function refreshUnreadCounts() {
-		for (const ticket of savedTickets) {
-			try {
-				const updated = await getTicket(ticket.slug);
-				const unreadCount = updated.messages.filter(msg => 
-					msg.author === 'admin' && !msg.read_by?.includes('user')
-				).length;
-				
-				// Update the ticket in the list with new unread count
-				savedTickets = savedTickets.map(t => 
-					t.slug === ticket.slug ? { ...t, unreadCount } : t
-				);
-			} catch (err) {
-				console.error('Error refreshing ticket:', err);
+	// Handle key press
+	function handleKeyPress(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			if (activeView === 'view') {
+				sendMessage();
 			}
 		}
-		// Save updated counts to localStorage
-		localStorage.setItem('supportTickets', JSON.stringify(savedTickets));
 	}
 
-	function goToList() {
-		currentView = 'list';
-		currentTicket = null;
-		// Disconnect WebSocket when leaving ticket view
-		if (wsUnsubscribe) {
-			wsUnsubscribe();
-			wsUnsubscribe = null;
+	// Toggle widget
+	function toggleWidget() {
+		isOpen = !isOpen;
+		if (isOpen) {
+			// Connect WebSocket for all tickets when opening
+			connectAllTicketWebSockets();
+		} else {
+			// Close WebSocket when closing widget
+			if (ws) {
+				ws.close();
+				ws = null;
+			}
+			activeView = 'list';
+			selectedTicket = null;
 		}
 	}
 
-	function goToCreate() {
-		currentView = 'create';
-		createError = '';
+	// Connect WebSocket for all tickets in the list (for background updates)
+	function connectAllTicketWebSockets() {
+		// Create a snapshot of tickets to avoid reactivity issues
+		const ticketsSnapshot = [...tickets];
+		ticketsSnapshot.forEach((ticket) => {
+			if (!wsConnections.has(ticket.slug)) {
+				connectBackgroundWebSocket(ticket.slug);
+			}
+		});
 	}
 
+	// WebSocket connections map for background monitoring
+	let wsConnections = new Map<string, WebSocket>();
+
+	// Connect to WebSocket for background ticket updates
+	function connectBackgroundWebSocket(ticketSlug: string) {
+	const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
+
+		try {
+			const bgWs = new WebSocket(wsUrl);
+
+			bgWs.onopen = () => {
+				wsConnections.set(ticketSlug, bgWs);
+			};
+
+			bgWs.onmessage = (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					// background message received
+
+					// Only update if we're not currently viewing this ticket
+					if (!selectedTicket || selectedTicket.slug !== ticketSlug) {
+						// will update ticket in background
+						if (data.type === 'new_message' || data.type === 'ticket_update') {
+							// Defer the update to avoid reactive context issues
+							setTimeout(() => {
+								loadTicketInBackground(ticketSlug);
+							}, 0);
+						}
+					} else {
+						// skipping update (ticket is currently being viewed)
+					}
+				} catch (e) {
+					console.error('❌ [BgWebSocket] Failed to parse message:', e);
+				}
+			};
+			bgWs.onerror = (error) => {
+				console.error('❌ Background WebSocket error:', ticketSlug, error);
+			};
+
+			bgWs.onclose = () => {
+				wsConnections.delete(ticketSlug);
+			};
+
+			wsConnections.set(ticketSlug, bgWs);
+		} catch (error) {
+			console.error('❌ Failed to create background WebSocket:', error);
+		}
+	}
+
+	// Load ticket in background to update unread count
+	async function loadTicketInBackground(slug: string) {
+		try {
+			const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
+			if (response.ok) {
+				const ticketData: Ticket = await response.json();
+				untrack(() => {
+					const ticketIndex = tickets.findIndex((t) => t.slug === slug);
+					if (ticketIndex !== -1) {
+						tickets[ticketIndex] = ticketData;
+						tickets = [...tickets];
+						saveTicketsToStorage();
+					}
+				});
+			}
+		} catch (error) {
+			console.error('❌ Failed to load ticket in background:', error);
+		}
+	}
+
+	// Navigate to create view
+	function showCreateView() {
+		activeView = 'create';
+		newTicketTitle = '';
+		newTicketDescription = '';
+		errorMessage = null;
+		successMessage = null;
+	}
+
+	// Navigate to list view
+	function showListView() {
+		const previousTicketSlug = selectedTicket?.slug;
+
+		activeView = 'list';
+		selectedTicket = null;
+
+		// Close active ticket WebSocket
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+
+		// Reconnect background WebSocket for the ticket we just left
+		if (previousTicketSlug && !wsConnections.has(previousTicketSlug)) {
+			connectBackgroundWebSocket(previousTicketSlug);
+		}
+	}
+
+	// Format message content
+	function formatMessageContent(content: string, isUser: boolean): string {
+		if (isUser) {
+			return content
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#039;')
+				.replace(/\n/g, '<br>');
+		} else {
+			try {
+				return marked.parse(content) as string;
+			} catch (error) {
+				console.error('Error parsing markdown:', error);
+				return content.replace(/\n/g, '<br>');
+			}
+		}
+	}
+
+	// Get unread count for a ticket
+	function getUnreadCount(ticket: Ticket): number {
+		return ticket.messages.filter((m) => m.author === 'admin' && !m.read_by.includes('user'))
+			.length;
+	}
+
+	// Format date
 	function formatDate(dateString: string): string {
 		const date = new Date(dateString);
 		const now = new Date();
@@ -890,1737 +722,1359 @@
 		if (diffMins < 60) return `${diffMins}m ago`;
 		if (diffHours < 24) return `${diffHours}h ago`;
 		if (diffDays < 7) return `${diffDays}d ago`;
-		return date.toLocaleDateString();
+
+		return date.toLocaleDateString([], {
+			month: 'short',
+			day: 'numeric'
+		});
 	}
 
-	// Helper function to check if a message is from an admin
-	// Returns true if author is "admin" or any other value that's not "user" or "system"
-	function isAdminMessage(author: string): boolean {
-		return author !== 'user' && author !== 'system';
+	// Format timestamp
+	function formatTimestamp(dateString: string): string {
+		const date = new Date(dateString);
+		return date.toLocaleTimeString([], {
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
 
-	// Helper function to get display name for a message author in the user widget
-	function getAuthorDisplayName(author: string): string {
-		if (author === 'user') return 'You';
-		if (author === 'system') return 'System';
-		if (author === 'admin') return 'Support';
-		// If it's not one of the standard values, it's an admin's actual name
-		return author;
-	}
-
-	function getStatusLabel(status: string): string {
-		return status.replace('_', ' ').toUpperCase();
-	}
-
-	function toggleFullscreen() {
-		isFullscreen = !isFullscreen;
-	}
-
-	function getResizeHandles(position: typeof dockPosition): { corner: 'nw' | 'ne' | 'sw' | 'se'; edges: ('n' | 's' | 'w' | 'e')[] } {
-		switch (position) {
-			case 'bottom-right':
-				return { corner: 'nw', edges: ['n', 'w'] }; // top-left corner, top and left edges
-			case 'bottom-left':
-				return { corner: 'ne', edges: ['n', 'e'] }; // top-right corner, top and right edges
-			case 'top-right':
-				return { corner: 'sw', edges: ['s', 'w'] }; // bottom-left corner, bottom and left edges
-			case 'top-left':
-				return { corner: 'se', edges: ['s', 'e'] }; // bottom-right corner, bottom and right edges
-		}
-	}
-
-	function startResize(event: MouseEvent, direction: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e') {
-		isResizing = true;
-		const startX = event.clientX;
-		const startY = event.clientY;
-		const startWidth = chatWidth;
-		const startHeight = chatHeight;
-
-		function handleMouseMove(e: MouseEvent) {
-			if (!isResizing) return;
-			
-			const deltaX = e.clientX - startX;
-			const deltaY = e.clientY - startY;
-			
-			let newWidth = startWidth;
-			let newHeight = startHeight;
-			
-			// Handle horizontal resizing
-			if (direction.includes('w')) {
-				// West side - decrease width when moving right, increase when moving left
-				newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - deltaX));
-			} else if (direction.includes('e')) {
-				// East side - increase width when moving right, decrease when moving left
-				newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + deltaX));
+	// Refresh ticket data without showing loading state
+	async function refreshTicket(slug: string) {
+		try {
+			const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
+			if (!response.ok) {
+				console.warn('⚠️  [refreshTicket] Response not OK:', response.status);
+				return;
 			}
-			
-			// Handle vertical resizing
-			if (direction.includes('n')) {
-				// North side - decrease height when moving down, increase when moving up
-				newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight - deltaY));
-			} else if (direction.includes('s')) {
-				// South side - increase height when moving down, decrease when moving up
-				newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
+
+			const ticketData: Ticket = await response.json();
+
+			// Update selectedTicket if we are viewing it
+			if (selectedTicket && selectedTicket.slug === slug) {
+				// updating selectedTicket with new data
+				const oldMessageCount = selectedTicket.messages.length;
+				selectedTicket = ticketData;
+				// message count changed
+				autoScroll();
+				// Mark as read
+				setTimeout(() => markMessagesAsRead(slug), 500);
+			} else {
+				// Not updating selectedTicket (viewing different ticket or no ticket selected)
 			}
-			
-			chatWidth = newWidth;
-			chatHeight = newHeight;
-		}
 
-		function handleMouseUp() {
-			isResizing = false;
-			document.removeEventListener('mousemove', handleMouseMove);
-			document.removeEventListener('mouseup', handleMouseUp);
+			// Update in tickets array
+			untrack(() => {
+				const ticketIndex = tickets.findIndex((t) => t.slug === slug);
+				if (ticketIndex !== -1) {
+					// updating ticket in tickets array at index: ticketIndex
+					tickets[ticketIndex] = ticketData;
+					tickets = [...tickets];
+				} else {
+					// ticket not found in tickets array
+				}
+				saveTicketsToStorage();
+			});
+		} catch (error) {
+			console.error('❌ [refreshTicket] Error:', error);
 		}
-
-		document.addEventListener('mousemove', handleMouseMove);
-		document.addEventListener('mouseup', handleMouseUp);
 	}
 </script>
 
-<!-- Chat Widget -->
-{#if isOpen}
+{#if isBrowser}
 	<div
-		class="ticket-widget theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'} {isResizing ? 'resizing' : ''} {isFullscreen ? 'fullscreen' : ''}"
-		style={isFullscreen ? '' : `width: ${chatWidth}px; height: ${chatHeight}px;`}
-		transition:fly={{ y: 50, duration: 300 }}
-		role="dialog"
-		aria-label="Support tickets"
-		tabindex="-1"
-		onclick={(e) => e.stopPropagation()}
-		onkeydown={(e) => e.stopPropagation()}
+		class="ticket-widget-container"
+		data-theme={activeTheme}
+		data-dock={dockPosition}
+		style={getPositionStyles()}
 	>
-		{#if !isFullscreen}
-			<!-- Dynamic Resize Handles Based on Dock Position -->
-			<!-- Corner Resize Handle -->
-			<div
-				role="button"
-				tabindex="0"
-				onmousedown={(e) => startResize(e, getResizeHandles(dockPosition).corner)}
-				class="resize-handle corner-{getResizeHandles(dockPosition).corner}"
-				title="Resize widget"
-			></div>
-			
-			<!-- Edge Resize Handles -->
-			{#each getResizeHandles(dockPosition).edges as edge}
-				<div
-					role="button"
-					tabindex="0"
-					onmousedown={(e) => startResize(e, edge)}
-					class="resize-handle edge-{edge}"
-					title="Resize {edge === 'n' || edge === 's' ? 'height' : 'width'}"
-				></div>
-			{/each}
-		{/if}
-
-		<!-- Header -->
-		<div class="widget-header">
-			<div class="header-left">
-				{#if currentView !== 'list'}
-					<button onclick={goToList} class="back-button" aria-label="Back to list">
-						<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+		{#if isOpen}
+			<div class="ticket-window">
+				<!-- Header -->
+				<div class="ticket-header">
+					<div class="header-content">
+						{#if activeView === 'list'}
+							<div class="header-icon">
+								<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+									<path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+									<rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="2"/>
+									<path d="M9 12H15M9 16H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+								</svg>
+							</div>
+							<div class="header-text">
+								<div class="header-title">Support Tickets</div>
+								<div class="header-subtitle">
+									{tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+								</div>
+							</div>
+						{:else if activeView === 'create'}
+							<button class="back-button" onclick={showListView} aria-label="Back to list">
+								<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+									<path
+										d="M12 4L6 10L12 16"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</button>
+							<div class="header-text">
+								<div class="header-title">Create Ticket</div>
+							</div>
+						{:else if activeView === 'view' && selectedTicket}
+							<button class="back-button" onclick={showListView} aria-label="Back to list">
+								<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+									<path
+										d="M12 4L6 10L12 16"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</button>
+							<div class="header-text">
+								<div class="header-title">{selectedTicket.title}</div>
+								<div class="header-subtitle">
+									<span style="opacity: 0.8;">#{selectedTicket.slug}</span>
+								</div>
+							</div>
+							<span class="status-badge status-{selectedTicket.status}">
+								{selectedTicket.status.replace(/_/g, ' ')}
+							</span>
+						{/if}
+					</div>
+					<button class="close-button" onclick={toggleWidget} aria-label="Close tickets">
+						<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+							<path
+								d="M15 5L5 15M5 5L15 15"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+							/>
 						</svg>
 					</button>
-				{/if}
-				<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-						d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-				</svg>
-				<h3 class="header-title">
-					{#if currentView === 'list'}Support Tickets{/if}
-					{#if currentView === 'create'}Create Ticket{/if}
-					{#if currentView === 'view' && currentTicket}
-						<span class="ticket-title-sm">{currentTicket.title}</span>
-					{/if}
-				</h3>
-			</div>
-			<div class="header-right">
-				<button onclick={toggleFullscreen} class="fullscreen-button" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
-					{#if isFullscreen}
-						<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-						</svg>
-					{:else}
-						<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-						</svg>
-					{/if}
-				</button>
-				<button onclick={handleClose} class="close-button" aria-label="Minimize">
-					<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-					</svg>
-				</button>
-			</div>
-		</div>		<!-- Content -->
-		<div class="widget-content">
-			{#if currentView === 'list'}
-				<!-- Ticket List View -->
-				<div class="ticket-list-view">
-					<div class="ticket-list-content">
-						<button onclick={goToCreate} class="create-ticket-button">
-							<svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-							</svg>
-							Create New Ticket
-						</button>
-
-						{#if savedTickets.length > 0}
-							<div class="tickets-section">
-								<h4 class="section-title">Your Tickets</h4>
-								{#each savedTickets as ticket}
-									<button
-										onclick={() => handleLoadTicket(ticket.slug)}
-										class="ticket-card"
-									>
-										<div class="ticket-card-content">
-											<div class="ticket-card-left">
-												<!-- Unread indicator - blue dot -->
-												{#if ticket.unreadCount && ticket.unreadCount > 0}
-													<div class="unread-dot" title="{ticket.unreadCount} unread message{ticket.unreadCount > 1 ? 's' : ''}"></div>
-												{/if}
-												<div class="ticket-info">
-													<p class="ticket-title">{ticket.title}</p>
-													<p class="ticket-slug">#{ticket.slug}</p>
-												</div>
-											</div>
-											<span class="status-badge status-{ticket.status}">
-												{getStatusLabel(ticket.status)}
-											</span>
-										</div>
-									</button>
-								{/each}
-							</div>
-						{:else}
-							<div class="empty-state">
-								<p>No tickets yet</p>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Load by Slug - at bottom -->
-					<div class="load-by-slug-section">
-						<h4 class="section-title">Have a ticket ID?</h4>
-						<div class="slug-input-wrapper">
-							<input
-								type="text"
-								bind:value={ticketSlug}
-								onkeypress={(e) => {
-									if (e.key === 'Enter' && ticketSlug.trim() && !isLoadingTicket) {
-										handleLoadTicket(ticketSlug);
-									}
-								}}
-								placeholder="Enter ticket ID"
-								class="slug-input"
-							/>
-							<button
-								onclick={() => handleLoadTicket(ticketSlug)}
-								disabled={!ticketSlug.trim() || isLoadingTicket}
-								class="load-button"
-							>
-								{isLoadingTicket ? '...' : 'Load'}
-							</button>
-						</div>
-						{#if ticketError}
-							<div class="error-message">
-								<p>{ticketError}</p>
-							</div>
-						{/if}
-					</div>
-				</div>			{:else if currentView === 'create'}
-				<!-- Create Ticket View -->
-				<div class="create-ticket-view">
-					<div class="create-form">
-						<div class="form-field">
-							<label for="ticket-title" class="form-label">Title</label>
-							<input
-								id="ticket-title"
-								type="text"
-								bind:value={title}
-								placeholder="Brief summary of your issue"
-								maxlength="200"
-								class="form-input"
-							/>
-						</div>
-
-						<div class="form-field form-field-flex">
-							<label for="ticket-description" class="form-label">Description</label>
-							<textarea
-								id="ticket-description"
-								bind:value={description}
-								placeholder="Provide detailed information about your issue..."
-								maxlength="5000"
-								class="form-textarea form-textarea-flex"
-							></textarea>
-							<p class="char-counter">
-								{description.length}/5000 characters
-							</p>
-						</div>
-
-						{#if createError}
-							<div class="error-message">
-								<p>{createError}</p>
-							</div>
-						{/if}
-						<button
-							onclick={handleCreateTicket}
-							disabled={isCreating || !title.trim() || !description.trim()}
-							class="submit-button"
-						>
-							{isCreating ? 'Creating...' : 'Create Ticket'}
-						</button>
-					</div>
 				</div>
 
-			{:else if currentView === 'view' && currentTicket}
-				<!-- View Ticket & Messages -->
-				<div class="view-ticket-container">
-					<!-- Ticket Info -->
-					<div class="ticket-info-header">
-						<div class="ticket-info-content">
-							<div class="ticket-slug-wrapper">
-								<p class="ticket-slug-text">#{currentTicket.slug}</p>
-							</div>
-							<span class="status-badge status-{currentTicket.status}">
-								{getStatusLabel(currentTicket.status)}
-							</span>
-						</div>
-						<p class="ticket-description">{currentTicket.description}</p>
-					</div>
-
-					<!-- Messages -->
-					<div class="messages-list">
-						{#each currentTicket.messages as message}
-							{#if message.type === 'status_change' && message.author === 'system'}
-								<!-- System message for status changes - centered and distinct -->
-								<div class="system-message-wrapper">
-									<div class="system-message-container">
-										<!-- Connecting line above -->
-										<div class="connector-line-top"></div>
-										
-										<div class="system-message">
-											<div class="system-message-content">
-												<div class="status-icon-wrapper">
-													<svg class="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-															d="M13 10V3L4 14h7v7l9-11h-7z" />
-													</svg>
-												</div>
-												<span class="system-message-text">{message.content}</span>
-											</div>
-											<div class="system-message-timestamp">
-												{formatDate(message.timestamp)}
-											</div>
-										</div>
-										
-										<!-- Connecting line below -->
-										<div class="connector-line-bottom"></div>
+				<!-- Content -->
+				<div class="ticket-content">
+					{#if activeView === 'list'}
+						<!-- Tickets List -->
+						<div class="tickets-list">
+							{#if errorMessage}
+								<div class="error-message">{errorMessage}</div>
+							{/if}
+							{#if isRateLimited && rateLimitMessage}
+								<div class="rate-limit-notice">
+									<div class="rate-limit-icon">
+										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+											<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+											<path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+										</svg>
 									</div>
-								</div>
-							{:else}
-								<!-- Regular message -->
-								<div class="chat-message {message.author === 'user' ? 'user' : 'admin'}">
-									<div class="message-bubble-wrapper">
-										<div class="message-bubble {message.author === 'user' ? 'user' : 'admin'}">
-											<p class="message-text">{message.content}</p>
-										</div>
-										<p class="message-meta {message.author === 'user' ? 'user' : 'admin'}">
-											<span>{getAuthorDisplayName(message.author)} · {formatDate(message.timestamp)}</span>
-											<!-- Read indicator - show on user's own messages when admin has read them -->
-											{#if message.author === 'user' && message.read_by?.includes('admin')}
-												<svg class="read-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-												</svg>
-											{/if}
-										</p>
+									<div class="rate-limit-text">
+										<strong>Rate Limit Active</strong>
+										<p>{rateLimitMessage}</p>
 									</div>
 								</div>
 							{/if}
-						{/each}
-						<!-- Scroll target -->
-						<div bind:this={messagesEndRef}></div>
-					</div>
+							{#if tickets.length === 0}
+								<div class="empty-state">
+									<div class="empty-icon">
+										<svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+											<path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+											<rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/>
+										</svg>
+									</div>
+									<div class="empty-title">No tickets yet</div>
+									<div class="empty-text">Create your first support ticket to get started</div>
+								</div>
+							{:else}
+								{#each tickets as ticket (ticket.slug)}
+									<button class="ticket-item" onclick={() => loadTicket(ticket.slug)}>
+										<div class="ticket-item-header">
+											<div class="ticket-item-title">{ticket.title}</div>
+											<span class="status-badge status-{ticket.status}">
+												{ticket.status.replace(/_/g, ' ')}
+											</span>
+										</div>
+										<div class="ticket-item-meta">
+											<span class="ticket-item-slug">#{ticket.slug}</span>
+											<span class="ticket-item-date">{formatDate(ticket.created_at)}</span>
+											{#if getUnreadCount(ticket) > 0}
+												<span class="unread-badge">{getUnreadCount(ticket)}</span>
+											{/if}
+										</div>
+										<div class="ticket-item-description">
+											{ticket.description.substring(0, 100)}{ticket.description.length > 100
+												? '...'
+												: ''}
+										</div>
+									</button>
+								{/each}
+							{/if}
+						</div>
 
-					<!-- Message Input -->
-					<div class="message-input-area">
-						{#if messageError}
-							<div class="error-message">
-								<p>{messageError}</p>
-							</div>
-						{/if}
-						<div class="message-input-wrapper">
-							<input
-								type="text"
-								bind:value={messageContent}
-								onkeypress={(e) => e.key === 'Enter' && !isSendingMessage && handleSendMessage()}
-								placeholder="Type your message..."
-								disabled={isSendingMessage}
-								class="message-input-field"
-							/>
-							<button
-								onclick={handleSendMessage}
-								disabled={!messageContent.trim() || isSendingMessage}
-								class="message-send-button"
-							>
-								{#if isSendingMessage}
-									<svg class="spinner-icon" fill="none" viewBox="0 0 24 24">
-										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-									</svg>
-								{:else}
-									<svg class="send-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-											d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-									</svg>
-								{/if}
+						<!-- Create Button -->
+						<div class="action-bar">
+							<button class="create-ticket-button" onclick={showCreateView}>
+								<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+									<path
+										d="M10 4V16M4 10H16"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+									/>
+								</svg>
+								Create New Ticket
 							</button>
 						</div>
-					</div>
+					{:else if activeView === 'create'}
+						<!-- Create Ticket Form -->
+						<div class="create-form">
+							{#if successMessage}
+								<div class="success-message">{successMessage}</div>
+							{/if}
+							{#if errorMessage}
+								<div class="error-message">{errorMessage}</div>
+							{/if}
+							{#if isRateLimited && rateLimitMessage}
+								<div class="rate-limit-notice">
+									<div class="rate-limit-icon">
+										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+											<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+											<path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+										</svg>
+									</div>
+									<div class="rate-limit-text">
+										<strong>Rate Limit Active</strong>
+										<p>{rateLimitMessage}</p>
+										{#if rateLimitCooldown > 0}
+											<p class="rate-limit-cooldown">Cooldown: {formatCooldownTime()}</p>
+										{/if}
+									</div>
+								</div>
+							{/if}
+
+							<div class="form-group">
+								<label for="ticket-title">Title</label>
+								<input
+									id="ticket-title"
+									type="text"
+									class="form-input"
+									bind:value={newTicketTitle}
+									placeholder="Brief description of your issue"
+									disabled={isLoading || isRateLimited}
+								/>
+							</div>
+
+							<div class="form-group">
+								<label for="ticket-description">Description</label>
+								<textarea
+									id="ticket-description"
+									class="form-textarea"
+									bind:value={newTicketDescription}
+									placeholder="Provide detailed information about your issue..."
+									rows="8"
+									disabled={isLoading || isRateLimited}
+								></textarea>
+							</div>
+
+							<button
+								class="submit-button"
+								onclick={createTicket}
+								disabled={!newTicketTitle.trim() ||
+									!newTicketDescription.trim() ||
+									isLoading ||
+									isRateLimited}
+							>
+								{isLoading ? 'Creating...' : isRateLimited ? 'Rate Limited' : 'Create Ticket'}
+							</button>
+						</div>
+					{:else if activeView === 'view' && selectedTicket}
+						<!-- Ticket View -->
+						<div class="ticket-view">
+							<!-- Messages -->
+							<div class="messages-section">
+								<div class="messages-container" bind:this={messagesContainer}>
+									<!-- Initial ticket description as first message -->
+									<div
+										class="message"
+										style="align-self: flex-end; align-items: flex-end;"
+									>
+										<div
+											class="message-content"
+											style="background: var(--user-msg-bg); color: var(--user-msg-text); border-bottom-right-radius: 4px;"
+										>
+											{selectedTicket.description}
+										</div>
+										<div class="message-time">
+											{formatTimestamp(selectedTicket.created_at)}
+											<span class="message-author">You</span>
+										</div>
+									</div>
+									
+									<!-- Subsequent messages -->
+									{#each selectedTicket.messages as message (message.id)}
+										<div
+											class="message"
+											style="align-self: {message.author === 'user'
+												? 'flex-end'
+												: 'flex-start'}; align-items: {message.author === 'user'
+												? 'flex-end'
+												: 'flex-start'};"
+										>
+											<div
+												class="message-content"
+												style="background: {message.author === 'user'
+													? 'var(--user-msg-bg)'
+													: 'var(--admin-msg-bg)'}; color: {message.author === 'user'
+													? 'var(--user-msg-text)'
+													: 'var(--admin-msg-text)'}; border-bottom-{message.author === 'user'
+													? 'right'
+													: 'left'}-radius: 4px;"
+											>
+												{message.content}
+											</div>
+											<div class="message-time">
+												{formatTimestamp(message.timestamp)}
+												{#if message.author === 'user'}
+													<span class="message-author">You</span>
+												{:else}
+													<span class="message-author">Support</span>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+							</div>
+
+							<!-- Message Input -->
+							{#if selectedTicket.status !== 'closed'}
+								<div class="message-input-container">
+									{#if errorMessage}
+										<div class="error-message-inline">{errorMessage}</div>
+									{/if}
+									{#if isRateLimited && rateLimitMessage}
+										<div class="rate-limit-notice-inline">
+											<span class="rate-limit-icon-small">
+												<svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+													<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+													<path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+												</svg>
+											</span>
+											<span>{rateLimitMessage}</span>
+											{#if rateLimitCooldown > 0}
+												<span class="rate-limit-cooldown-small">({formatCooldownTime()})</span>
+											{/if}
+										</div>
+									{/if}
+									<div class="input-wrapper">
+										<textarea
+											class="message-input"
+											bind:value={messageInput}
+											onkeydown={handleKeyPress}
+											placeholder="Type your message..."
+											rows="2"
+											disabled={isLoading || isRateLimited}
+										></textarea>
+										<button
+											class="send-button"
+											onclick={sendMessage}
+											disabled={!messageInput.trim() || isLoading || isRateLimited}
+											aria-label="Send message"
+											title={isRateLimited ? 'Rate limited' : 'Send message'}
+										>
+											<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+												<path
+													d="M2 10L18 2L10 18L8 11L2 10Z"
+													fill="currentColor"
+													stroke="currentColor"
+													stroke-width="1.5"
+													stroke-linejoin="round"
+												/>
+											</svg>
+										</button>
+									</div>
+								</div>
+							{:else}
+								<div class="ticket-closed-notice">
+									This ticket is closed. No new messages can be added.
+								</div>
+							{/if}
+						</div>
+					{/if}
 				</div>
+			</div>
+		{/if}
+
+		<!-- Floating Button -->
+		<button class="ticket-toggle-button" onclick={toggleWidget} aria-label="Toggle tickets">
+			{#if isOpen}
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+					<path
+						d="M19 9L12 16L5 9"
+						stroke="currentColor"
+						stroke-width="2.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			{:else}
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+					<path
+						d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 6.10457 9.89543 7 11 7H13C14.1046 7 15 6.10457 15 5M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5M9 12H15M9 16H13"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
 			{/if}
-		</div>
+			{#if tickets.some((t) => getUnreadCount(t) > 0)}
+				<span class="notification-dot"></span>
+			{/if}
+		</button>
 	</div>
 {/if}
 
-<!-- Floating Action Button - Always visible, positioned below the widget -->
-<button
-	onclick={(e) => { e.stopPropagation(); isOpen ? handleClose() : handleOpen(); }}
-	class="ticket-fab theme-{theme} dock-{dockPosition} {isMobile ? 'mobile' : 'desktop'}"
-	aria-label={isOpen ? "Close Support Tickets" : "Open Support Tickets"}
->
-	<div class="fab-icon-wrapper">
-		<div class="icon-container" class:open={isOpen}>
-			<svg class="icon icon-default" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-					d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-			</svg>
-			<svg class="icon icon-close" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-			</svg>
-		</div>
-		<!-- Blue dot indicator for unread messages -->
-		{#if totalUnreadCount > 0 && !isOpen}
-			<div class="unread-indicator"></div>
-		{/if}
-	</div>
-</button>
-
 <style>
-	/* === Animations === */
-	@keyframes pulse {
-		0%, 100% {
-			opacity: 1;
-		}
-		50% {
-			opacity: 0.5;
-		}
-	}
-
-	/* === Floating Action Button === */
-	.ticket-fab {
+	.ticket-widget-container {
 		position: fixed;
-		z-index: 1100;
-		border-radius: 50%;
-		padding: 1rem;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-		transition: all 0.2s;
-		border: none;
-		cursor: pointer;
+		z-index: 9999;
+		font-family:
+			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	}
 
-	.ticket-fab:hover {
-		transform: scale(1.1);
+	/* Theme Variables */
+	.ticket-widget-container[data-theme='light'] {
+		--bg-primary: #ffffff;
+		--bg-secondary: #f9fafb;
+		--bg-hover: #f3f4f6;
+		--text-primary: #111827;
+		--text-secondary: #6b7280;
+		--border-color: #e5e7eb;
+		--accent-color: var(--custom-accent, #3b82f6);
+		--user-msg-bg: var(--custom-accent, #3b82f6);
+		--user-msg-text: #ffffff;
+		--admin-msg-bg: #e5e7eb;
+		--admin-msg-text: #111827;
+		--shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+		--success-bg: #d1fae5;
+		--success-text: #065f46;
+		--error-bg: #fee2e2;
+		--error-text: #991b1b;
 	}
 
-	/* FAB positioning */
-	.ticket-fab.dock-bottom-right {
-		bottom: 1rem;
-		right: 1rem;
+	.ticket-widget-container[data-theme='dark'] {
+		--bg-primary: #1e1e1e;
+		--bg-secondary: #2d2d2d;
+		--bg-hover: #3a3a3a;
+		--text-primary: #eaeaea;
+		--text-secondary: #9ca3af;
+		--border-color: #404040;
+		--accent-color: var(--custom-accent, #3b82f6);
+		--user-msg-bg: var(--custom-accent, #3b82f6);
+		--user-msg-text: #ffffff;
+		--admin-msg-bg: #404040;
+		--admin-msg-text: #eaeaea;
+		--shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+		--success-bg: #064e3b;
+		--success-text: #d1fae5;
+		--error-bg: #7f1d1d;
+		--error-text: #fecaca;
 	}
 
-	.ticket-fab.dock-bottom-left.desktop {
-		bottom: 1rem;
-		left: 1rem;
+	.ticket-widget-container[data-theme='material'] {
+		--bg-primary: #ffffff;
+		--bg-secondary: #fafafa;
+		--bg-hover: #f5f5f5;
+		--text-primary: #212121;
+		--text-secondary: #757575;
+		--border-color: #e0e0e0;
+		--accent-color: var(--custom-accent, #1976d2);
+		--user-msg-bg: var(--custom-accent, #1976d2);
+		--user-msg-text: #ffffff;
+		--admin-msg-bg: #eeeeee;
+		--admin-msg-text: #212121;
+		--shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+		--success-bg: #c8e6c9;
+		--success-text: #1b5e20;
+		--error-bg: #ffcdd2;
+		--error-text: #b71c1c;
 	}
 
-	.ticket-fab.dock-bottom-left.mobile {
-		bottom: 1rem;
-		left: 1rem;
+	.ticket-widget-container[data-theme='nord'] {
+		--bg-primary: #2e3440;
+		--bg-secondary: #3b4252;
+		--bg-hover: #434c5e;
+		--text-primary: #eceff4;
+		--text-secondary: #d8dee9;
+		--border-color: #4c566a;
+		--accent-color: #88c0d0;
+		--user-msg-bg: #88c0d0;
+		--user-msg-text: #2e3440;
+		--admin-msg-bg: #434c5e;
+		--admin-msg-text: #eceff4;
+		--shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+		--success-bg: #a3be8c;
+		--success-text: #2e3440;
+		--error-bg: #bf616a;
+		--error-text: #eceff4;
 	}
 
-	.ticket-fab.dock-top-right {
-		top: 1rem;
-		right: 1rem;
+	.ticket-widget-container[data-theme='fleety'] {
+		--bg-primary: #232627;
+		--bg-secondary: #2d3133;
+		--bg-hover: #363a3c;
+		--text-primary: #ffffff;
+		--text-secondary: #b8babb;
+		--border-color: #3d4245;
+		--accent-color: #f1be00;
+		--user-msg-bg: #f1be00;
+		--user-msg-text: #232627;
+		--admin-msg-bg: #454a4d;
+		--admin-msg-text: #ffffff;
+		--shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+		--success-bg: #4a5a3e;
+		--success-text: #a8d08d;
+		--error-bg: #5a3e3e;
+		--error-text: #f5a9a9;
 	}
 
-	.ticket-fab.dock-top-left.desktop {
-		top: 1rem;
-		left: 1rem;
+	/* Fleety theme: Black text on yellow backgrounds for better contrast */
+	.ticket-widget-container[data-theme='fleety'] .ticket-header {
+		color: #232627;
 	}
 
-	.ticket-fab.dock-top-left.mobile {
-		top: 1rem;
-		left: 1rem;
+	.ticket-widget-container[data-theme='fleety'] .close-button {
+		color: #232627;
 	}
 
-	/* FAB theme colors */
-	.ticket-fab.theme-fleety {
-		background: #facc15;
-		color: #000;
+	.ticket-widget-container[data-theme='fleety'] .back-button {
+		color: #232627;
 	}
 
-	.ticket-fab.theme-fleety:hover {
-		background: #fde047;
-	}
-
-	.ticket-fab.theme-material {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.ticket-fab.theme-material:hover {
-		background: #1d4ed8;
-	}
-
-	.ticket-fab.theme-midnight {
-		background: #9333ea;
-		color: #fff;
-	}
-
-	.ticket-fab.theme-midnight:hover {
-		background: #7e22ce;
-	}
-
-	.fab-icon-wrapper {
-		position: relative;
-	}
-
-	.icon-container {
-		position: relative;
-		width: 1.5rem;
-		height: 1.5rem;
-	}
-
-	.fab-icon-wrapper .icon {
-		width: 1.5rem;
-		height: 1.5rem;
+	/* Ticket Window */
+	.ticket-window {
 		position: absolute;
-		top: 0;
-		left: 0;
-		transition: opacity 0.3s ease, transform 0.3s ease;
-	}
-
-	.icon-default {
-		opacity: 1;
-		transform: rotate(0deg) scale(1);
-	}
-
-	.icon-close {
-		opacity: 0;
-		transform: rotate(90deg) scale(0.8);
-	}
-
-	.icon-container.open .icon-default {
-		opacity: 0;
-		transform: rotate(-90deg) scale(0.8);
-	}
-
-	.icon-container.open .icon-close {
-		opacity: 1;
-		transform: rotate(0deg) scale(1);
-	}
-
-	.unread-indicator {
-		position: absolute;
-		top: -0.25rem;
-		right: -0.25rem;
-		width: 0.625rem;
-		height: 0.625rem;
-		background: #3b82f6;
-		border-radius: 50%;
-		animation: pulse 2s infinite;
-	}
-
-	/* === Ticket Widget === */
-	.ticket-widget {
-		position: fixed;
-		z-index: 1100;
-		border-radius: 0.5rem;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-		border: 2px solid;
+		bottom: 80px;
+		right: 0;
+		width: 420px;
+		max-width: calc(100vw - 40px);
+		height: 650px;
+		max-height: calc(100vh - 120px);
+		background: var(--bg-primary);
+		border-radius: 12px;
+		box-shadow: var(--shadow);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
-		transition: box-shadow 0.3s;
+		animation: slideUp 0.3s ease-out;
 	}
 
-	.ticket-widget:hover {
-		box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.6);
-	}
-
-	.ticket-widget.resizing {
-		user-select: none;
-	}
-
-	.ticket-widget.fullscreen {
-		position: fixed !important;
-		top: 0 !important;
-		left: 0 !important;
-		right: 0 !important;
-		bottom: 0 !important;
-		width: 100vw !important;
-		height: 100vh !important;
-		border-radius: 0 !important;
-		z-index: 9999 !important;
-	}
-
-	/* Widget positioning - positioned above the button */
-	.ticket-widget.dock-bottom-right {
-		bottom: 5.5rem;
-		right: 1rem;
-	}
-
-	.ticket-widget.dock-bottom-left.desktop {
-		bottom: 5.5rem;
-		left: 1rem;
-	}
-
-	.ticket-widget.dock-bottom-left.mobile {
-		bottom: 5.5rem;
-		left: 1rem;
-	}
-
-	.ticket-widget.dock-top-right {
-		top: 5.5rem;
-		right: 1rem;
-	}
-
-	.ticket-widget.dock-top-left.desktop {
-		top: 5.5rem;
-		left: 1rem;
-	}
-
-	.ticket-widget.dock-top-left.mobile {
-		top: 5.5rem;
-		left: 1rem;
-	}
-
-	/* Widget theme colors */
-	.ticket-widget.theme-fleety {
-		background: #111827;
-		border-color: #374151;
-	}
-
-	.ticket-widget.theme-material {
-		background: #fff;
-		border-color: #d1d5db;
-	}
-
-	.ticket-widget.theme-midnight {
-		background: #0f172a;
-		border-color: #6b21a8;
-	}
-
-	/* === Resize Handles === */
-	.resize-handle {
-		position: absolute;
-		transition: background-color 0.2s;
-		z-index: 10;
-	}
-
-	.resize-handle.corner-nw {
-		top: 0;
-		left: 0;
-		width: 1rem;
-		height: 1rem;
-		cursor: nw-resize;
-	}
-
-	.resize-handle.corner-ne {
-		top: 0;
+	/* Position based on dock */
+	.ticket-widget-container[data-dock='bottom-right'] .ticket-window {
+		bottom: 80px;
 		right: 0;
-		width: 1rem;
-		height: 1rem;
-		cursor: ne-resize;
+		left: auto;
+		top: auto;
 	}
 
-	.resize-handle.corner-sw {
-		bottom: 0;
+	.ticket-widget-container[data-dock='bottom-left'] .ticket-window {
+		bottom: 80px;
 		left: 0;
-		width: 1rem;
-		height: 1rem;
-		cursor: sw-resize;
+		right: auto;
+		top: auto;
 	}
 
-	.resize-handle.corner-se {
-		bottom: 0;
+	.ticket-widget-container[data-dock='top-right'] .ticket-window {
+		top: 80px;
 		right: 0;
-		width: 1rem;
-		height: 1rem;
-		cursor: se-resize;
+		bottom: auto;
+		left: auto;
 	}
 
-	.resize-handle.edge-n {
-		top: 0;
-		left: 1rem;
-		right: 1rem;
-		height: 0.5rem;
-		cursor: n-resize;
-	}
-
-	.resize-handle.edge-s {
-		bottom: 0;
-		left: 1rem;
-		right: 1rem;
-		height: 0.5rem;
-		cursor: s-resize;
-	}
-
-	.resize-handle.edge-w {
+	.ticket-widget-container[data-dock='top-left'] .ticket-window {
+		top: 80px;
 		left: 0;
-		top: 1rem;
-		bottom: 1rem;
-		width: 0.5rem;
-		cursor: w-resize;
+		bottom: auto;
+		right: auto;
 	}
 
-	.resize-handle.edge-e {
-		right: 0;
-		top: 1rem;
-		bottom: 1rem;
-		width: 0.5rem;
-		cursor: e-resize;
+	@keyframes slideUp {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
-	.resize-handle:hover {
-		background-color: rgba(255, 255, 255, 0.1);
-	}
-
-	.theme-fleety .resize-handle:hover {
-		background-color: rgba(250, 204, 21, 0.2);
-	}
-
-	.theme-material .resize-handle:hover {
-		background-color: rgba(37, 99, 235, 0.1);
-	}
-
-	.theme-midnight .resize-handle:hover {
-		background-color: rgba(147, 51, 234, 0.2);
-	}
-
-	/* === Widget Header === */
-	.widget-header {
+	/* Header */
+	.ticket-header {
+		background: var(--accent-color);
+		color: white;
+		padding: 16px 20px;
 		display: flex;
-		align-items: center;
 		justify-content: space-between;
-		padding: 0.875rem 0.75rem;
+		align-items: center;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		flex-shrink: 0;
 	}
 
-	.theme-fleety .widget-header {
-		background: #facc15;
-		color: #000;
-	}
-
-	.theme-material .widget-header {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.theme-midnight .widget-header {
-		background: linear-gradient(to right, #581c87, #312e81);
-		color: #e9d5ff;
-	}
-
-	.header-left {
+	.header-content {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		min-width: 0;
+		gap: 12px;
 		flex: 1;
+		min-width: 0;
+	}
+
+	.header-icon {
+		font-size: 24px;
+		flex-shrink: 0;
+	}
+
+	.back-button {
+		background: transparent;
+		border: none;
+		color: white;
+		cursor: pointer;
+		padding: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 4px;
+		transition: background 0.2s;
+		flex-shrink: 0;
+	}
+
+	.back-button:hover {
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.header-text {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.header-title {
 		font-weight: 600;
-		font-size: 0.875rem;
+		font-size: 16px;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.ticket-title-sm {
-		font-size: 0.875rem;
-		font-weight: 600;
+	.header-subtitle {
+		font-size: 13px;
+		opacity: 0.9;
+		margin-top: 2px;
 	}
 
-	.header-right {
+	.close-button {
+		background: transparent;
+		border: none;
+		color: white;
+		cursor: pointer;
+		padding: 4px;
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
+		justify-content: center;
+		border-radius: 4px;
+		transition: background 0.2s;
+		flex-shrink: 0;
 	}
 
-	.back-button,
-	.close-button,
-	.fullscreen-button {
-		background: none;
-		border: none;
-		cursor: pointer;
-		transition: all 0.2s;
-		color: inherit;
+	.close-button:hover {
+		background: rgba(255, 255, 255, 0.1);
 	}
 
-	.back-button:hover,
-	.close-button:hover,
-	.fullscreen-button:hover {
-		opacity: 0.8;
-		transform: scale(1.1);
-	}
-
-	.icon {
-		width: 1rem;
-		height: 1rem;
-	}
-
-	.header-title {
-		font-weight: 600;
-		font-size: 0.875rem;
-	}
-
-	.ticket-title-sm {
-		font-size: 0.875rem;
-	}
-
-	/* === Widget Content === */
-	.widget-content {
+	/* Content */
+	.ticket-content {
 		flex: 1;
 		overflow: hidden;
 		display: flex;
-		justify-content: center;
-	}
-
-	.ticket-list-view {
-		height: 100%;
-		padding: 1rem;
-		padding-bottom: 0;
-		display: flex;
 		flex-direction: column;
-		width: 100%;
-		max-width: 600px;
 	}
 
-	.ticket-list-content {
+	/* Tickets List */
+	.tickets-list {
 		flex: 1;
 		overflow-y: auto;
-		overscroll-behavior: contain;
+		padding: 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-		min-height: 0;
+		gap: 12px;
+		background: var(--bg-secondary);
 	}
 
-	.create-ticket-button {
-		width: 100%;
-		padding: 0.75rem 1rem;
-		border-radius: 0.5rem;
-		font-weight: 500;
-		transition: background-color 0.2s;
+	.empty-state {
+		flex: 1;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 0.5rem;
-		border: none;
+		padding: 40px 20px;
+		text-align: center;
+	}
+
+	.empty-icon {
+		font-size: 48px;
+		margin-bottom: 16px;
+		opacity: 0.5;
+	}
+
+	.empty-title {
+		font-size: 18px;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 8px;
+	}
+
+	.empty-text {
+		font-size: 14px;
+		color: var(--text-secondary);
+		max-width: 300px;
+	}
+
+	.ticket-item {
+		background: var(--bg-primary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 14px;
 		cursor: pointer;
-	}
-
-	.theme-fleety .create-ticket-button {
-		background: #facc15;
-		color: #000;
-	}
-
-	.theme-fleety .create-ticket-button:hover {
-		background: #fde047;
-	}
-
-	.theme-material .create-ticket-button {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.theme-material .create-ticket-button:hover {
-		background: #1d4ed8;
-	}
-
-	.theme-midnight .create-ticket-button {
-		background: #9333ea;
-		color: #fff;
-	}
-
-	.theme-midnight .create-ticket-button:hover {
-		background: #7e22ce;
-	}
-
-	/* === Tickets Section === */
-	.tickets-section {
+		transition: all 0.2s;
+		text-align: left;
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 8px;
 	}
 
-	.section-title {
-		font-size: 0.875rem;
-		font-weight: 500;
-		opacity: 0.7;
-		margin-bottom: 0.5rem;
+	.ticket-item:hover {
+		background: var(--bg-hover);
+		border-color: var(--accent-color);
+		transform: translateY(-2px);
+		box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 	}
 
-	.theme-fleety .section-title {
-		color: #fff;
-	}
-
-	.theme-material .section-title {
-		color: #111827;
-	}
-
-	.theme-midnight .section-title {
-		color: #f0e9ff;
-	}
-
-	/* === Ticket Card === */
-	.ticket-card {
-		padding: 0.75rem;
-		border-radius: 0.5rem;
-		text-align: left;
-		width: 100%;
-		transition: background-color 0.2s;
-		border: none;
-		cursor: pointer;
-		position: relative;
-	}
-
-	.theme-fleety .ticket-card {
-		background: #1f2937;
-		color: #fff;
-	}
-
-	.theme-fleety .ticket-card:hover {
-		background: #374151;
-	}
-
-	.theme-material .ticket-card {
-		background: #f9fafb;
-		color: #111827;
-	}
-
-	.theme-material .ticket-card:hover {
-		background: #f3f4f6;
-	}
-
-	.theme-midnight .ticket-card {
-		background: #1e293b;
-		color: #f0e9ff;
-	}
-
-	.theme-midnight .ticket-card:hover {
-		background: #334155;
-	}
-
-	.ticket-card-content {
+	.ticket-item-header {
 		display: flex;
-		align-items: flex-start;
 		justify-content: space-between;
-		gap: 0.5rem;
+		align-items: flex-start;
+		gap: 8px;
 	}
 
-	.ticket-card-left {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+	.ticket-item-title {
+		font-weight: 600;
+		font-size: 15px;
+		color: var(--text-primary);
 		flex: 1;
 		min-width: 0;
-	}
-
-	.unread-dot {
-		width: 0.5rem;
-		height: 0.5rem;
-		background: #3b82f6;
-		border-radius: 50%;
-		flex-shrink: 0;
-		animation: pulse 2s infinite;
-	}
-
-	.ticket-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.ticket-title {
-		font-weight: 500;
-		font-size: 0.875rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.ticket-slug {
-		font-size: 0.75rem;
-		opacity: 0.6;
+	.status-badge {
+		display: inline-block;
+		padding: 3px 8px;
+		border-radius: 4px;
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		flex-shrink: 0;
 	}
 
-	/* === Status Badge === */
-	.status-badge {
-		color: #fff;
-		font-size: 0.75rem;
-		padding: 0.25rem 0.5rem;
-		border-radius: 9999px;
-		flex-shrink: 0;
+	/* Status badge in header needs margin */
+	.ticket-header .status-badge {
+		margin-left: 12px;
 	}
 
 	.status-badge.status-open {
-		background: #22c55e;
+		background: #10b981;
+		color: white;
 	}
 
 	.status-badge.status-in_progress {
 		background: #3b82f6;
+		color: white;
 	}
 
 	.status-badge.status-resolved {
-		background: #a855f7;
+		background: #8b5cf6;
+		color: white;
 	}
 
 	.status-badge.status-closed {
-		background: #6b7280;
+		background: var(--text-secondary);
+		color: white;
 	}
 
-	/* === Empty State === */
-	.empty-state {
-		text-align: center;
-		padding: 2rem 0;
+	.ticket-item-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 12px;
+		color: var(--text-secondary);
 	}
 
-	.empty-state p {
-		opacity: 0.6;
-		font-size: 0.875rem;
+	.ticket-item-slug {
+		font-weight: 500;
 	}
 
-	.theme-fleety .empty-state p {
-		color: #fff;
+	.ticket-item-date {
+		flex: 1;
 	}
 
-	.theme-material .empty-state p {
-		color: #111827;
+	.unread-badge {
+		background: #ef4444;
+		color: white;
+		padding: 2px 6px;
+		border-radius: 10px;
+		font-size: 11px;
+		font-weight: 600;
 	}
 
-	.theme-midnight .empty-state p {
-		color: #f0e9ff;
+	.ticket-item-description {
+		font-size: 13px;
+		color: var(--text-secondary);
+		line-height: 1.4;
 	}
 
-	/* === Load by Slug Section === */
-	.load-by-slug-section {
-		margin-top: auto;
-		padding-top: 1rem;
-		padding-bottom: 1rem;
+	/* Action Bar */
+	.action-bar {
+		padding: 16px;
+		background: var(--bg-primary);
+		border-top: 1px solid var(--border-color);
 		flex-shrink: 0;
 	}
 
-	.theme-fleety .load-by-slug-section {
-		border-color: #374151;
-	}
-
-	.theme-material .load-by-slug-section {
-		border-color: #d1d5db;
-	}
-
-	.theme-midnight .load-by-slug-section {
-		border-color: #6b21a8;
-	}
-
-	.slug-input-wrapper {
-		display: flex;
-		gap: 0.5rem;
-		margin-top: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.slug-input {
-		flex: 1;
-		border-radius: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		font-size: 0.875rem;
-		border: 1px solid;
-		outline: none;
-		box-sizing: border-box;
-	}
-
-	.slug-input:focus {
-		outline: none;
-		box-shadow: 0 0 0 2px currentColor;
-	}
-
-	.theme-fleety .slug-input {
-		background: #1f2937;
-		border-color: #4b5563;
-		color: #fff;
-	}
-
-	.theme-fleety .slug-input:focus {
-		border-color: #facc15;
-		box-shadow: 0 0 0 2px #facc15;
-	}
-
-	.theme-material .slug-input {
-		background: #f9fafb;
-		border-color: #d1d5db;
-		color: #111827;
-	}
-
-	.theme-material .slug-input:focus {
-		border-color: #2563eb;
-		box-shadow: 0 0 0 2px #2563eb;
-	}
-
-	.theme-midnight .slug-input {
-		background: #1e293b;
-		border-color: #581c87;
-		color: #f0e9ff;
-	}
-
-	.theme-midnight .slug-input:focus {
-		border-color: #a855f7;
-		box-shadow: 0 0 0 2px #a855f7;
-	}
-
-	.load-button {
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem;
-		font-size: 0.875rem;
-		font-weight: 500;
-		transition: background-color 0.2s;
+	.create-ticket-button {
+		width: 100%;
+		background: var(--accent-color);
+		color: white;
 		border: none;
+		border-radius: 8px;
+		padding: 12px;
+		font-size: 14px;
+		font-weight: 600;
 		cursor: pointer;
-	}
-
-	.load-button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.theme-fleety .load-button {
-		background: #facc15;
-		color: #000;
-	}
-
-	.theme-material .load-button {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.theme-midnight .load-button {
-		background: #9333ea;
-		color: #fff;
-	}
-
-	/* === Create Ticket View === */
-	.create-ticket-view {
-		height: 100%;
-		padding: 1rem;
+		transition:
+			opacity 0.2s,
+			transform 0.1s;
 		display: flex;
+		align-items: center;
 		justify-content: center;
-		width: 100%;
-		overflow-y: auto;
+		gap: 8px;
 	}
 
+	.ticket-widget-container[data-theme='fleety'] .create-ticket-button {
+		color: #232627;
+	}
+
+	.create-ticket-button:hover {
+		opacity: 0.9;
+		transform: scale(1.02);
+	}
+
+	.create-ticket-button:active {
+		transform: scale(0.98);
+	}
+
+	/* Create Form */
 	.create-form {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		width: 100%;
-		max-width: 600px;
-		height: fit-content;
-		min-height: 100%;
-	}
-
-	.form-field-flex {
 		flex: 1;
+		overflow-y: auto;
+		padding: 20px;
 		display: flex;
 		flex-direction: column;
-		min-height: 0;
-		max-height: 260px;
+		gap: 20px;
+		background: var(--bg-secondary);
 	}
 
-	.form-textarea-flex {
-		flex: 1;
-		resize: none;
-		min-height: 0;
-	}
-
-	.form-field {
+	.form-group {
 		display: flex;
 		flex-direction: column;
+		gap: 8px;
 	}
 
-	.form-label {
-		display: block;
-		font-size: 0.875rem;
-		font-weight: 500;
-		margin-bottom: 0.25rem;
-	}
-
-	.theme-fleety .form-label {
-		color: #fff;
-	}
-
-	.theme-material .form-label {
-		color: #111827;
-	}
-
-	.theme-midnight .form-label {
-		color: #f0e9ff;
+	.form-group label {
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--text-primary);
 	}
 
 	.form-input,
 	.form-textarea {
-		width: 100%;
-		border-radius: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		border: 1px solid;
-		outline: none;
-		font-size: 0.875rem;
-		box-sizing: border-box;
+		background: var(--bg-primary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 10px 12px;
+		font-size: 14px;
+		font-family: inherit;
+		color: var(--text-primary);
+		transition: border-color 0.2s;
 	}
 
 	.form-input:focus,
 	.form-textarea:focus {
 		outline: none;
-		box-shadow: 0 0 0 2px currentColor;
+		border-color: var(--accent-color);
 	}
 
-	.theme-fleety .form-input,
-	.theme-fleety .form-textarea {
-		background: #1f2937;
-		border-color: #4b5563;
-		color: #fff;
+	.form-input::placeholder,
+	.form-textarea::placeholder {
+		color: var(--text-secondary);
 	}
 
-	.theme-fleety .form-input:focus,
-	.theme-fleety .form-textarea:focus {
-		border-color: #facc15;
-		box-shadow: 0 0 0 2px #facc15;
-	}
-
-	.theme-material .form-input,
-	.theme-material .form-textarea {
-		background: #f9fafb;
-		border-color: #d1d5db;
-		color: #111827;
-	}
-
-	.theme-material .form-input:focus,
-	.theme-material .form-textarea:focus {
-		border-color: #2563eb;
-		box-shadow: 0 0 0 2px #2563eb;
-	}
-
-	.theme-midnight .form-input,
-	.theme-midnight .form-textarea {
-		background: #1e293b;
-		border-color: #581c87;
-		color: #f0e9ff;
-	}
-
-	.theme-midnight .form-input:focus,
-	.theme-midnight .form-textarea:focus {
-		border-color: #a855f7;
-		box-shadow: 0 0 0 2px #a855f7;
-	}
-
-	.char-counter {
-		font-size: 0.75rem;
+	.form-input:disabled,
+	.form-textarea:disabled {
 		opacity: 0.5;
-		margin-top: 0.25rem;
+		cursor: not-allowed;
 	}
 
-	.theme-fleety .char-counter {
-		color: #fff;
-	}
-
-	.theme-material .char-counter {
-		color: #111827;
-	}
-
-	.theme-midnight .char-counter {
-		color: #f0e9ff;
-	}
-
-	.error-message {
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.3);
-		border-radius: 0.5rem;
-		padding: 0.75rem;
-		margin-bottom: 0.5rem;
-	}
-
-	.error-message p {
-		color: #f87171;
-		font-size: 0.875rem;
+	.form-textarea {
+		resize: vertical;
+		min-height: 120px;
 	}
 
 	.submit-button {
-		width: 100%;
-		padding: 0.75rem 1rem;
-		border-radius: 0.5rem;
-		font-weight: 500;
-		transition: background-color 0.2s;
+		background: var(--accent-color);
+		color: white;
 		border: none;
+		border-radius: 8px;
+		padding: 12px;
+		font-size: 14px;
+		font-weight: 600;
 		cursor: pointer;
-		flex-shrink: 0;
+		transition:
+			opacity 0.2s,
+			transform 0.1s;
+		margin-top: auto;
+	}
+
+	.ticket-widget-container[data-theme='fleety'] .submit-button {
+		color: #232627;
+	}
+
+	.submit-button:hover:not(:disabled) {
+		opacity: 0.9;
+		transform: scale(1.02);
+	}
+
+	.submit-button:active:not(:disabled) {
+		transform: scale(0.98);
 	}
 
 	.submit-button:disabled {
-		opacity: 0.5;
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
 
-	.theme-fleety .submit-button:not(:disabled) {
-		background: #facc15;
-		color: #000;
-	}
-
-	.theme-fleety .submit-button:not(:disabled):hover {
-		background: #fde047;
-	}
-
-	.theme-material .submit-button:not(:disabled) {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.theme-material .submit-button:not(:disabled):hover {
-		background: #1d4ed8;
-	}
-
-	.theme-midnight .submit-button:not(:disabled) {
-		background: #9333ea;
-		color: #fff;
-	}
-
-	.theme-midnight .submit-button:not(:disabled):hover {
-		background: #7e22ce;
-	}
-
-	/* === View Ticket === */
-	.view-ticket-container {
-		height: 100%;
+	/* Ticket View */
+	.ticket-view {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
-		width: 100%;
-		align-items: center;
+		overflow: hidden;
 	}
 
-	.ticket-info-header {
-		padding: 1rem;
-		border-bottom: 1px solid;
-		width: 100%;
-		max-width: 800px;
+	.ticket-details {
+		padding: 16px 20px;
+		background: var(--bg-primary);
+		border-bottom: 1px solid var(--border-color);
+		flex-shrink: 0;
 	}
 
-	.theme-fleety .ticket-info-header {
-		background: #1f2937;
-		border-color: #374151;
+	.ticket-title-section {
+		margin-bottom: 12px;
 	}
 
-	.theme-material .ticket-info-header {
-		background: #f9fafb;
-		border-color: #d1d5db;
+	.ticket-title-section h3 {
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 6px 0;
 	}
 
-	.theme-midnight .ticket-info-header {
-		background: #1e293b;
-		border-color: #6b21a8;
+	.ticket-meta {
+		font-size: 12px;
+		color: var(--text-secondary);
 	}
 
-	.ticket-info-content {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
+	.ticket-description-section {
+		padding-top: 12px;
+		border-top: 1px solid var(--border-color);
 	}
 
-	.ticket-slug-wrapper {
+	.description-content {
+		font-size: 14px;
+		color: var(--text-primary);
+		line-height: 1.5;
+	}
+
+	/* Messages Section */
+	.messages-section {
 		flex: 1;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		background: var(--bg-secondary);
 	}
 
-	.ticket-slug-text {
-		font-size: 0.75rem;
-		opacity: 0.6;
+	.messages-header {
+		padding: 12px 20px;
+		border-bottom: 1px solid var(--border-color);
+		background: var(--bg-primary);
 	}
 
-	.theme-fleety .ticket-slug-text {
-		color: #fff;
+	.messages-count {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
 	}
 
-	.theme-material .ticket-slug-text {
-		color: #111827;
-	}
-
-	.theme-midnight .ticket-slug-text {
-		color: #f0e9ff;
-	}
-
-	.ticket-description {
-		font-size: 0.875rem;
-	}
-
-	.theme-fleety .ticket-description {
-		color: #fff;
-	}
-
-	.theme-material .ticket-description {
-		color: #111827;
-	}
-
-	.theme-midnight .ticket-description {
-		color: #f0e9ff;
-	}
-
-	/* === Messages List === */
-	.messages-list {
+	.messages-container {
 		flex: 1;
 		overflow-y: auto;
-		overscroll-behavior: contain;
-		padding: 1rem;
+		padding: 16px 20px;
 		display: flex;
 		flex-direction: column;
-		gap: 0.75rem;
-		width: 100%;
-		max-width: 800px;
-		align-self: center;
+		gap: 16px;
 	}
 
-	/* === System Messages === */
-	.system-message-wrapper {
+	.message {
 		display: flex;
-		justify-content: center;
-		margin: 1rem 0;
-	}
-
-	.system-message-container {
-		position: relative;
-		max-width: 85%;
-	}
-
-	.connector-line-top {
-		position: absolute;
-		top: 0;
-		left: 50%;
-		transform: translateX(-50%) translateY(-100%);
-		height: 0.75rem;
-		width: 1px;
-		background: linear-gradient(to bottom, transparent, rgba(250, 204, 21, 0.2));
-	}
-
-	.connector-line-bottom {
-		position: absolute;
-		bottom: 0;
-		left: 50%;
-		transform: translateX(-50%) translateY(100%);
-		height: 0.75rem;
-		width: 1px;
-		background: linear-gradient(to bottom, rgba(250, 204, 21, 0.2), transparent);
-	}
-
-	.system-message {
-		border: 1px solid rgba(250, 204, 21, 0.2);
-		border-radius: 0.75rem;
-		padding: 0.625rem 1rem;
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-	}
-
-	.theme-fleety .system-message {
-		background: #1f2937;
-	}
-
-	.theme-material .system-message {
-		background: #f9fafb;
-	}
-
-	.theme-midnight .system-message {
-		background: #1e293b;
-	}
-
-	.system-message-content {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-	}
-
-	.theme-fleety .system-message-content {
-		color: #fff;
-	}
-
-	.theme-material .system-message-content {
-		color: #111827;
-	}
-
-	.theme-midnight .system-message-content {
-		color: #f0e9ff;
-	}
-
-	.status-icon-wrapper {
-		background: rgba(250, 204, 21, 0.1);
-		padding: 0.375rem;
-		border-radius: 50%;
-	}
-
-	.status-icon {
-		width: 0.875rem;
-		height: 0.875rem;
-		color: #facc15;
-	}
-
-	.system-message-text {
-		font-weight: 500;
-		opacity: 0.8;
-	}
-
-	.system-message-timestamp {
-		font-size: 0.75rem;
-		opacity: 0.5;
-		margin-top: 0.375rem;
-		text-align: center;
-		font-family: monospace;
-	}
-
-	.theme-fleety .system-message-timestamp {
-		color: #fff;
-	}
-
-	.theme-material .system-message-timestamp {
-		color: #111827;
-	}
-
-	.theme-midnight .system-message-timestamp {
-		color: #f0e9ff;
-	}
-
-	/* === Chat Messages === */
-	.chat-message {
-		display: flex;
-	}
-
-	.chat-message.user {
-		justify-content: flex-end;
-	}
-
-	.chat-message.admin {
-		justify-content: flex-start;
-	}
-
-	.message-bubble-wrapper {
+		flex-direction: column;
+		gap: 4px;
 		max-width: 80%;
+		animation: fadeIn 0.3s ease-out;
 	}
 
-	.message-bubble {
-		border-radius: 0.5rem;
-		padding: 0.75rem;
-	}
-
-	.theme-fleety .message-bubble.user {
-		background: #facc15;
-		color: #000;
-	}
-
-	.theme-fleety .message-bubble.admin {
-		background: #1f2937;
-		color: #fff;
-	}
-
-	.theme-material .message-bubble.user {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.theme-material .message-bubble.admin {
-		background: #f3f4f6;
-		color: #111827;
-	}
-
-	.theme-midnight .message-bubble.user {
-		background: linear-gradient(to right, #9333ea, #6366f1);
-		color: #fff;
-	}
-
-	.theme-midnight .message-bubble.admin {
-		background: #1e293b;
-		color: #f0e9ff;
-	}
-
-	.message-text {
-		font-size: 0.875rem;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
-
-	.message-meta {
-		font-size: 0.75rem;
-		opacity: 0.5;
-		margin-top: 0.25rem;
-		display: flex;
-		align-items: center;
-		gap: 0.25rem;
-	}
-
-	.message-meta.user {
-		text-align: right;
-		justify-content: flex-end;
-	}
-
-	.message-meta.admin {
-		text-align: left;
-		justify-content: flex-start;
-	}
-
-	.theme-fleety .message-meta {
-		color: #fff;
-	}
-
-	.theme-material .message-meta {
-		color: #111827;
-	}
-
-	.theme-midnight .message-meta {
-		color: #f0e9ff;
-	}
-
-	.read-icon {
-		width: 0.75rem;
-		height: 0.75rem;
-		opacity: 0.7;
-	}
-
-	/* === Message Input Area === */
-	.message-input-area {
-		padding: 1rem;
-		border-top: 1px solid;
-		width: 100%;
-		max-width: 800px;
-		align-self: center;
-	}
-
-	.theme-fleety .message-input-area {
-		border-color: #374151;
-	}
-
-	.theme-material .message-input-area {
-		border-color: #d1d5db;
-	}
-
-	.theme-midnight .message-input-area {
-		border-color: #6b21a8;
-	}
-
-	.message-input-wrapper {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.message-input-field {
-		flex: 1;
-		border-radius: 0.5rem;
-		padding: 0.5rem 0.75rem;
-		border: 1px solid;
-		outline: none;
-		box-sizing: border-box;
-	}
-
-	.message-input-field:focus {
-		outline: none;
-		box-shadow: 0 0 0 2px currentColor;
-	}
-
-	.message-input-field:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.theme-fleety .message-input-field {
-		background: #1f2937;
-		border-color: #4b5563;
-		color: #fff;
-	}
-
-	.theme-fleety .message-input-field:focus {
-		border-color: #facc15;
-		box-shadow: 0 0 0 2px #facc15;
-	}
-
-	.theme-material .message-input-field {
-		background: #f9fafb;
-		border-color: #d1d5db;
-		color: #111827;
-	}
-
-	.theme-material .message-input-field:focus {
-		border-color: #2563eb;
-		box-shadow: 0 0 0 2px #2563eb;
-	}
-
-	.theme-midnight .message-input-field {
-		background: #1e293b;
-		border-color: #581c87;
-		color: #f0e9ff;
-	}
-
-	.theme-midnight .message-input-field:focus {
-		border-color: #a855f7;
-		box-shadow: 0 0 0 2px #a855f7;
-	}
-
-	.message-send-button {
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem;
-		font-weight: 500;
-		transition: background-color 0.2s;
-		border: none;
-		cursor: pointer;
-	}
-
-	.message-send-button:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.theme-fleety .message-send-button:not(:disabled) {
-		background: #facc15;
-		color: #000;
-	}
-
-	.theme-material .message-send-button:not(:disabled) {
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.theme-midnight .message-send-button:not(:disabled) {
-		background: #9333ea;
-		color: #fff;
-	}
-
-	.spinner-icon,
-	.send-icon {
-		width: 1.25rem;
-		height: 1.25rem;
-	}
-
-	@keyframes spin {
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
 		to {
-			transform: rotate(360deg);
+			opacity: 1;
+			transform: translateY(0);
 		}
 	}
 
-	.spinner-icon {
-		animation: spin 1s linear infinite;
+	.message-content {
+		padding: 10px 14px;
+		border-radius: 12px;
+		font-size: 14px;
+		line-height: 1.5;
+		word-wrap: break-word;
+		white-space: pre-wrap;
+	}
+
+	.message-time {
+		font-size: 11px;
+		color: var(--text-secondary);
+		padding: 0 4px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.message-author {
+		font-weight: 600;
+	}
+
+	/* Message Input */
+	.message-input-container {
+		padding: 16px 20px;
+		background: var(--bg-primary);
+		border-top: 1px solid var(--border-color);
+		flex-shrink: 0;
+	}
+
+	.error-message-inline {
+		background: var(--error-bg);
+		color: var(--error-text);
+		padding: 8px 12px;
+		border-radius: 6px;
+		font-size: 12px;
+		margin-bottom: 12px;
+	}
+
+	.input-wrapper {
+		display: flex;
+		gap: 12px;
+		align-items: flex-end;
+	}
+
+	.message-input {
+		flex: 1;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 10px 12px;
+		font-size: 14px;
+		font-family: inherit;
+		color: var(--text-primary);
+		resize: none;
+		max-height: 100px;
+		transition: border-color 0.2s;
+	}
+
+	.message-input:focus {
+		outline: none;
+		border-color: var(--accent-color);
+	}
+
+	.message-input::placeholder {
+		color: var(--text-secondary);
+	}
+
+	.message-input:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.send-button {
+		background: var(--accent-color);
+		color: white;
+		border: none;
+		border-radius: 8px;
+		width: 40px;
+		height: 40px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition:
+			opacity 0.2s,
+			transform 0.1s;
+		flex-shrink: 0;
+	}
+
+	.ticket-widget-container[data-theme='fleety'] .send-button {
+		color: #232627;
+	}
+
+	.send-button:hover:not(:disabled) {
+		opacity: 0.9;
+		transform: scale(1.05);
+	}
+
+	.send-button:active:not(:disabled) {
+		transform: scale(0.95);
+	}
+
+	.send-button:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.ticket-closed-notice {
+		padding: 16px;
+		text-align: center;
+		background: var(--bg-secondary);
+		color: var(--text-secondary);
+		font-size: 13px;
+		border-top: 1px solid var(--border-color);
+	}
+
+	/* Messages */
+	.success-message {
+		background: var(--success-bg);
+		color: var(--success-text);
+		padding: 12px;
+		border-radius: 8px;
+		font-size: 14px;
+		text-align: center;
+		font-weight: 500;
+	}
+
+	.error-message {
+		background: var(--error-bg);
+		color: var(--error-text);
+		padding: 12px;
+		border-radius: 8px;
+		font-size: 14px;
+		text-align: center;
+		font-weight: 500;
+	}
+
+	/* Rate Limit Notices */
+	.rate-limit-notice {
+		background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%);
+		border: 1px solid #ffc107;
+		color: #856404;
+		padding: 16px;
+		border-radius: 8px;
+		margin-bottom: 16px;
+		display: flex;
+		gap: 12px;
+		align-items: flex-start;
+	}
+
+	.ticket-widget-container[data-theme='dark'] .rate-limit-notice,
+	.ticket-widget-container[data-theme='nord'] .rate-limit-notice,
+	.ticket-widget-container[data-theme='fleety'] .rate-limit-notice {
+		background: linear-gradient(135deg, #4a3f1a 0%, #5a4f2a 100%);
+		border-color: #9e7e00;
+		color: #ffd54f;
+	}
+
+	.rate-limit-icon {
+		font-size: 24px;
+		flex-shrink: 0;
+	}
+
+	.rate-limit-text {
+		flex: 1;
+	}
+
+	.rate-limit-text strong {
+		display: block;
+		margin-bottom: 4px;
+		font-size: 14px;
+	}
+
+	.rate-limit-text p {
+		margin: 4px 0;
+		font-size: 13px;
+		opacity: 0.9;
+	}
+
+	.rate-limit-cooldown {
+		font-weight: 600;
+		margin-top: 8px !important;
+	}
+
+	.rate-limit-notice-inline {
+		background: #fff8e1;
+		border: 1px solid #ffc107;
+		color: #856404;
+		padding: 8px 12px;
+		border-radius: 6px;
+		font-size: 12px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+
+	.ticket-widget-container[data-theme='dark'] .rate-limit-notice-inline,
+	.ticket-widget-container[data-theme='nord'] .rate-limit-notice-inline,
+	.ticket-widget-container[data-theme='fleety'] .rate-limit-notice-inline {
+		background: #4a3f1a;
+		border-color: #9e7e00;
+		color: #ffd54f;
+	}
+
+	.rate-limit-icon-small {
+		font-size: 16px;
+	}
+
+	.rate-limit-cooldown-small {
+		font-weight: 600;
+		margin-left: auto;
+	}
+
+	/* Toggle Button */
+	.ticket-toggle-button {
+		width: 60px;
+		height: 60px;
+		border-radius: 50%;
+		background: var(--accent-color);
+		color: white;
+		border: none;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		transition:
+			transform 0.2s,
+			box-shadow 0.2s;
+		position: relative;
+	}
+
+	.ticket-widget-container[data-theme='fleety'] .ticket-toggle-button {
+		color: #232627;
+	}
+
+	.ticket-toggle-button:hover {
+		transform: scale(1.05);
+		box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+	}
+
+	.ticket-toggle-button:active {
+		transform: scale(0.95);
+	}
+
+	.notification-dot {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 12px;
+		height: 12px;
+		background: #ef4444;
+		border: 2px solid white;
+		border-radius: 50%;
+		animation: pulse 2s infinite;
+	}
+
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.7;
+			transform: scale(1.1);
+		}
+	}
+
+	/* Scrollbar Styling */
+	.tickets-list::-webkit-scrollbar,
+	.messages-container::-webkit-scrollbar,
+	.create-form::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.tickets-list::-webkit-scrollbar-track,
+	.messages-container::-webkit-scrollbar-track,
+	.create-form::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.tickets-list::-webkit-scrollbar-thumb,
+	.messages-container::-webkit-scrollbar-thumb,
+	.create-form::-webkit-scrollbar-thumb {
+		background: var(--border-color);
+		border-radius: 3px;
+	}
+
+	.tickets-list::-webkit-scrollbar-thumb:hover,
+	.messages-container::-webkit-scrollbar-thumb:hover,
+	.create-form::-webkit-scrollbar-thumb:hover {
+		background: var(--text-secondary);
+	}
+
+	/* Mobile Responsiveness */
+	@media (max-width: 480px) {
+		.ticket-window {
+			width: calc(100vw - 40px);
+			height: calc(100vh - 140px);
+		}
+
+		.ticket-toggle-button {
+			width: 56px;
+			height: 56px;
+		}
 	}
 </style>
