@@ -1,1901 +1,798 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-
-// === Component Styles ===
-const styles = `
-/* === Animations === */
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-/* === Floating Action Button === */
-.ticket-fab {
-    position: fixed;
-    z-index: 1100;
-    border-radius: 50%;
-    padding: 1rem;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    transition: all 0.2s;
-    border: none;
-    cursor: pointer;
-}
-
-.ticket-fab:hover {
-    transform: scale(1.1);
-}
-
-.ticket-fab.dock-bottom-right {
-    bottom: 1rem;
-    right: 1rem;
-}
-
-.ticket-fab.dock-bottom-left.desktop,
-.ticket-fab.dock-bottom-left.mobile {
-    bottom: 1rem;
-    left: 1rem;
-}
-
-.ticket-fab.dock-top-right {
-    top: 1rem;
-    right: 1rem;
-}
-
-.ticket-fab.dock-top-left.desktop,
-.ticket-fab.dock-top-left.mobile {
-    top: 1rem;
-    left: 1rem;
-}
-
-.ticket-fab.theme-fleety {
-    background: #facc15;
-    color: #000;
-}
-
-.ticket-fab.theme-fleety:hover {
-    background: #fde047;
-}
-
-.ticket-fab.theme-material {
-    background: #2563eb;
-    color: #fff;
-}
-
-.ticket-fab.theme-material:hover {
-    background: #1d4ed8;
-}
-
-.ticket-fab.theme-midnight {
-    background: #9333ea;
-    color: #fff;
-}
-
-.ticket-fab.theme-midnight:hover {
-    background: #7e22ce;
-}
-
-.fab-icon-wrapper {
-    position: relative;
-}
-
-.icon-container {
-    position: relative;
-    width: 1.5rem;
-    height: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.fab-icon-wrapper .icon {
-    width: 1.5rem;
-    height: 1.5rem;
-    position: absolute;
-    top: 50%;
-    left: calc(50% - 2px);
-    transform: translate(-50%, -50%);
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.icon-default {
-    opacity: 1;
-    transform: translate(-50%, -50%) rotate(0deg) scale(1);
-}
-
-.icon-close {
-    opacity: 0;
-    transform: translate(-50%, -50%) rotate(90deg) scale(0.8);
-}
-
-.icon-container.open .icon-default {
-    opacity: 0;
-    transform: translate(-50%, -50%) rotate(-90deg) scale(0.8);
-}
-
-.icon-container.open .icon-close {
-    opacity: 1;
-    transform: translate(-50%, -50%) rotate(0deg) scale(1);
-}
-
-.unread-indicator {
-    position: absolute;
-    top: -0.25rem;
-    right: -0.25rem;
-    width: 0.625rem;
-    height: 0.625rem;
-    background: #3b82f6;
-    border-radius: 50%;
-    animation: pulse 2s infinite;
-}
-
-.ticket-widget {
-    position: fixed;
-    z-index: 1100;
-    border-radius: 0.5rem;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    border: 2px solid;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transition: box-shadow 0.3s;
-}
-
-.ticket-widget:hover {
-    box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.6);
-}
-
-.ticket-widget.resizing {
-    user-select: none;
-}
-
-.ticket-widget.fullscreen {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    border-radius: 0 !important;
-    z-index: 9999 !important;
-}
-
-.ticket-widget.dock-bottom-right {
-    bottom: 5.5rem;
-    right: 1rem;
-}
-
-.ticket-widget.dock-bottom-left.desktop,
-.ticket-widget.dock-bottom-left.mobile {
-    bottom: 5.5rem;
-    left: 1rem;
-}
-
-.ticket-widget.dock-top-right {
-    top: 5.5rem;
-    right: 1rem;
-}
-
-.ticket-widget.dock-top-left.desktop,
-.ticket-widget.dock-top-left.mobile {
-    top: 5.5rem;
-    left: 1rem;
-}
-
-.ticket-widget.theme-fleety {
-    background: #111827;
-    border-color: #374151;
-}
-
-.ticket-widget.theme-material {
-    background: #fff;
-    border-color: #d1d5db;
-}
-
-.ticket-widget.theme-midnight {
-    background: #0f172a;
-    border-color: #6b21a8;
-}
-
-.resize-handle {
-    position: absolute;
-    transition: background-color 0.2s;
-    z-index: 10;
-}
-
-.resize-handle.corner-nw {
-    top: 0;
-    left: 0;
-    width: 1rem;
-    height: 1rem;
-    cursor: nw-resize;
-}
-
-.resize-handle.corner-ne {
-    top: 0;
-    right: 0;
-    width: 1rem;
-    height: 1rem;
-    cursor: ne-resize;
-}
-
-.resize-handle.corner-sw {
-    bottom: 0;
-    left: 0;
-    width: 1rem;
-    height: 1rem;
-    cursor: sw-resize;
-}
-
-.resize-handle.corner-se {
-    bottom: 0;
-    right: 0;
-    width: 1rem;
-    height: 1rem;
-    cursor: se-resize;
-}
-
-.resize-handle.edge-n {
-    top: 0;
-    left: 1rem;
-    right: 1rem;
-    height: 0.5rem;
-    cursor: n-resize;
-}
-
-.resize-handle.edge-s {
-    bottom: 0;
-    left: 1rem;
-    right: 1rem;
-    height: 0.5rem;
-    cursor: s-resize;
-}
-
-.resize-handle.edge-w {
-    left: 0;
-    top: 1rem;
-    bottom: 1rem;
-    width: 0.5rem;
-    cursor: w-resize;
-}
-
-.resize-handle.edge-e {
-    right: 0;
-    top: 1rem;
-    bottom: 1rem;
-    width: 0.5rem;
-    cursor: e-resize;
-}
-
-.resize-handle:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-.theme-fleety .resize-handle:hover {
-    background-color: rgba(250, 204, 21, 0.2);
-}
-
-.theme-material .resize-handle:hover {
-    background-color: rgba(37, 99, 235, 0.1);
-}
-
-.theme-midnight .resize-handle:hover {
-    background-color: rgba(147, 51, 234, 0.2);
-}
-
-.widget-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-}
-
-.theme-fleety .widget-header {
-    background: #facc15;
-    color: #000;
-}
-
-.theme-material .widget-header {
-    background: #2563eb;
-    color: #fff;
-}
-
-.theme-midnight .widget-header {
-    background: linear-gradient(to right, #581c87, #312e81);
-    color: #e9d5ff;
-}
-
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-    flex: 1;
-}
-
-.header-title {
-    font-weight: 600;
-    font-size: 0.875rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.ticket-title-sm {
-    font-size: 0.875rem;
-    font-weight: 600;
-}
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.back-button,
-.close-button,
-.fullscreen-button {
-    background: none;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: inherit;
-}
-
-.back-button:hover,
-.close-button:hover,
-.fullscreen-button:hover {
-    opacity: 0.8;
-    transform: scale(1.1);
-}
-
-.icon {
-    width: 1rem;
-    height: 1rem;
-}
-
-.widget-content {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    justify-content: center;
-}
-
-.ticket-list-view {
-    height: 100%;
-    padding: 1rem;
-    padding-bottom: 0;
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 600px;
-}
-
-.ticket-list-content {
-    flex: 1;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    min-height: 0;
-}
-
-.create-ticket-button {
-    width: auto;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    font-weight: 500;
-    transition: background-color 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: none;
-    cursor: pointer;
-}
-
-.theme-fleety .create-ticket-button {
-    background: #facc15;
-    color: #000;
-}
-
-.theme-fleety .create-ticket-button:hover {
-    background: #fde047;
-}
-
-.theme-material .create-ticket-button {
-    background: #2563eb;
-    color: #fff;
-}
-
-.theme-material .create-ticket-button:hover {
-    background: #1d4ed8;
-}
-
-.theme-midnight .create-ticket-button {
-    background: #9333ea;
-    color: #fff;
-}
-
-.theme-midnight .create-ticket-button:hover {
-    background: #7e22ce;
-}
-
-.tickets-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-
-.section-title {
-    font-size: 0.875rem;
-    font-weight: 500;
-    opacity: 0.7;
-    margin-bottom: 0.5rem;
-}
-
-.theme-fleety .section-title {
-    color: #fff;
-}
-
-.theme-material .section-title {
-    color: #111827;
-}
-
-.theme-midnight .section-title {
-    color: #f0e9ff;
-}
-
-.ticket-card {
-    padding: 0.4rem 0.6rem;
-    border-radius: 0.375rem;
-    text-align: left;
-    width: 100%;
-    transition: background-color 0.2s;
-    border: none;
-    cursor: pointer;
-    position: relative;
-}
-
-.theme-fleety .ticket-card {
-    background: #1f2937;
-    color: #fff;
-}
-
-.theme-fleety .ticket-card:hover {
-    background: #374151;
-}
-
-.theme-material .ticket-card {
-    background: #f9fafb;
-    color: #111827;
-}
-
-.theme-material .ticket-card:hover {
-    background: #f3f4f6;
-}
-
-.theme-midnight .ticket-card {
-    background: #1e293b;
-    color: #f0e9ff;
-}
-
-.theme-midnight .ticket-card:hover {
-    background: #334155;
-}
-
-.ticket-card-content {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-}
-
-.ticket-card-left {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex: 1;
-    min-width: 0;
-}
-
-.unread-dot {
-    width: 0.4rem;
-    height: 0.4rem;
-    background: #3b82f6;
-    border-radius: 50%;
-    flex-shrink: 0;
-    animation: pulse 2s infinite;
-}
-
-.ticket-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.ticket-title {
-    font-weight: 500;
-    font-size: 0.8125rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    line-height: 1.3;
-    margin-bottom: 0.1rem;
-}
-
-.ticket-slug {
-    font-size: 0.6875rem;
-    opacity: 0.5;
-    line-height: 1;
-}
-
-.status-badge {
-    color: #fff;
-    font-size: 0.6875rem;
-    padding: 0.15rem 0.4rem;
-    border-radius: 9999px;
-    flex-shrink: 0;
-    line-height: 1;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-}
-
-.status-badge.status-open {
-    background: #22c55e;
-}
-
-.status-badge.status-in_progress {
-    background: #3b82f6;
-}
-
-.status-badge.status-resolved {
-    background: #a855f7;
-}
-
-.status-badge.status-closed {
-    background: #6b7280;
-}
-
-.empty-state {
-    text-align: center;
-    padding: 2rem 0;
-}
-
-.empty-state p {
-    opacity: 0.6;
-    font-size: 0.875rem;
-}
-
-.theme-fleety .empty-state p {
-    color: #fff;
-}
-
-.theme-material .empty-state p {
-    color: #111827;
-}
-
-.theme-midnight .empty-state p {
-    color: #f0e9ff;
-}
-
-.load-by-slug-section {
-    margin-top: auto;
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-    flex-shrink: 0;
-}
-
-.slug-input-wrapper {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    margin-bottom: 1rem;
-}
-
-.slug-input {
-    flex: 1;
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    border: 1px solid;
-    outline: none;
-    box-sizing: border-box;
-}
-
-.slug-input:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px currentColor;
-}
-
-.theme-fleety .slug-input {
-    background: #1f2937;
-    border-color: #4b5563;
-    color: #fff;
-}
-
-.theme-fleety .slug-input:focus {
-    border-color: #facc15;
-    box-shadow: 0 0 0 2px #facc15;
-}
-
-.theme-material .slug-input {
-    background: #f9fafb;
-    border-color: #d1d5db;
-    color: #111827;
-}
-
-.theme-material .slug-input:focus {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 2px #2563eb;
-}
-
-.theme-midnight .slug-input {
-    background: #1e293b;
-    border-color: #581c87;
-    color: #f0e9ff;
-}
-
-.theme-midnight .slug-input:focus {
-    border-color: #a855f7;
-    box-shadow: 0 0 0 2px #a855f7;
-}
-
-.load-button {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    border: none;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.load-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.theme-fleety .load-button {
-    background: #facc15;
-    color: #000;
-}
-
-.theme-fleety .load-button:hover:not(:disabled) {
-    background: #fde047;
+import { marked } from 'marked';
+
+// Configure marked options
+marked.setOptions({
+    breaks: true,
+    gfm: true
+});
+
+const API_BASE = 'https://api.fleety.dev/v1';
+const WS_BASE = 'wss://api.fleety.dev/v1';
+
+interface Message {
+    id: string;
+    author: 'user' | 'admin' | 'system';
+    content: string;
+    timestamp: string;
+    read_by: string[];
 }
-
-.theme-material .load-button {
-    background: #2563eb;
-    color: #fff;
-}
-
-.theme-material .load-button:hover:not(:disabled) {
-    background: #1d4ed8;
-}
-
-.theme-midnight .load-button {
-    background: #9333ea;
-    color: #fff;
-}
-
-.theme-midnight .load-button:hover:not(:disabled) {
-    background: #7e22ce;
-}
-
-.create-ticket-view {
-    width: 100%;
-    height: 100%;
-    padding: 1rem;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-}
-
-.create-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    height: 100%;
-}
-
-.form-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.form-field-flex {
-    flex: 1;
-    min-height: 0;
-}
-
-.form-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-}
-
-.theme-fleety .form-label {
-    color: #fff;
-}
-
-.theme-material .form-label {
-    color: #111827;
-}
-
-.theme-midnight .form-label {
-    color: #f0e9ff;
-}
-
-.form-input,
-.form-textarea {
-    width: 100%;
-    border-radius: 0.5rem;
-    padding: 0.75rem;
-    font-size: 0.875rem;
-    border: 1px solid;
-    outline: none;
-    box-sizing: border-box;
-}
-
-.form-input:focus,
-.form-textarea:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px currentColor;
-}
-
-.form-textarea {
-    resize: none;
-}
-
-.form-textarea-flex {
-    flex: 1;
-    min-height: 100px;
-}
-
-.theme-fleety .form-input,
-.theme-fleety .form-textarea {
-    background: #1f2937;
-    border-color: #4b5563;
-    color: #fff;
-}
-
-.theme-fleety .form-input:focus,
-.theme-fleety .form-textarea:focus {
-    border-color: #facc15;
-    box-shadow: 0 0 0 2px #facc15;
-}
-
-.theme-material .form-input,
-.theme-material .form-textarea {
-    background: #f9fafb;
-    border-color: #d1d5db;
-    color: #111827;
-}
-
-.theme-material .form-input:focus,
-.theme-material .form-textarea:focus {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 2px #2563eb;
-}
-
-.theme-midnight .form-input,
-.theme-midnight .form-textarea {
-    background: #1e293b;
-    border-color: #581c87;
-    color: #f0e9ff;
-}
-
-.theme-midnight .form-input:focus,
-.theme-midnight .form-textarea:focus {
-    border-color: #a855f7;
-    box-shadow: 0 0 0 2px #a855f7;
-}
-
-.char-counter {
-    font-size: 0.75rem;
-    text-align: right;
-    opacity: 0.6;
-}
-
-.theme-fleety .char-counter {
-    color: #fff;
-}
-
-.theme-material .char-counter {
-    color: #111827;
-}
-
-.theme-midnight .char-counter {
-    color: #f0e9ff;
-}
-
-.submit-button {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    font-weight: 500;
-    transition: background-color 0.2s;
-    border: none;
-    cursor: pointer;
-    margin-top: auto;
-}
-
-.submit-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.theme-fleety .submit-button {
-    background: #facc15;
-    color: #000;
-}
-
-.theme-fleety .submit-button:hover:not(:disabled) {
-    background: #fde047;
-}
-
-.theme-material .submit-button {
-    background: #2563eb;
-    color: #fff;
-}
-
-.theme-material .submit-button:hover:not(:disabled) {
-    background: #1d4ed8;
-}
-
-.theme-midnight .submit-button {
-    background: #9333ea;
-    color: #fff;
-}
-
-.theme-midnight .submit-button:hover:not(:disabled) {
-    background: #7e22ce;
-}
-
-.error-message {
-    padding: 0.75rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    margin-top: 0.5rem;
-}
-
-.theme-fleety .error-message {
-    background: #7f1d1d;
-    color: #fecaca;
-}
-
-.theme-material .error-message {
-    background: #fef2f2;
-    color: #dc2626;
-}
-
-.theme-midnight .error-message {
-    background: #2e1038;
-    color: #f9a8d4;
-}
-
-.view-ticket-container {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
-.ticket-info-header {
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid;
-}
-
-.theme-fleety .ticket-info-header {
-    border-color: #374151;
-    color: #fff;
-}
-
-.theme-material .ticket-info-header {
-    border-color: #d1d5db;
-    color: #111827;
-}
-
-.theme-midnight .ticket-info-header {
-    border-color: #6b21a8;
-    color: #f0e9ff;
-}
-
-.ticket-info-content {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
-}
-
-.ticket-slug-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.ticket-slug-text {
-    font-size: 0.875rem;
-    font-weight: 500;
-    opacity: 0.7;
-}
-
-.ticket-description {
-    font-size: 0.875rem;
-    opacity: 0.9;
-}
-
-.messages-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    overscroll-behavior: contain;
-}
-
-.system-message-wrapper {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-}
-
-.system-message-container {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 100%;
-}
-
-.connector-line-top,
-.connector-line-bottom {
-    width: 1px;
-    background: #4b5563;
-    height: 1rem;
-}
-
-.system-message {
-    padding: 0.5rem 1rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-}
-
-.theme-fleety .system-message {
-    background: #1f2937;
-    color: #d1d5db;
-}
-
-.theme-material .system-message {
-    background: #f3f4f6;
-    color: #4b5563;
-}
-
-.theme-midnight .system-message {
-    background: #1e293b;
-    color: #9ca3af;
-}
-
-.system-message-content {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.status-icon-wrapper {
-    padding: 0.25rem;
-    border-radius: 50%;
-}
-
-.theme-fleety .status-icon-wrapper {
-    background: #374151;
-}
-
-.theme-material .status-icon-wrapper {
-    background: #e5e7eb;
-}
-
-.theme-midnight .status-icon-wrapper {
-    background: #334155;
-}
-
-.status-icon {
-    width: 0.75rem;
-    height: 0.75rem;
-}
-
-.system-message-text {
-    font-weight: 500;
-}
-
-.system-message-timestamp {
-    font-size: 0.625rem;
-    opacity: 0.7;
-}
-
-.chat-message {
-    display: flex;
-    width: 100%;
-}
-
-.chat-message.user {
-    justify-content: flex-end;
-}
-
-.chat-message.admin {
-    justify-content: flex-start;
-}
-
-.message-bubble-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.chat-message.user .message-bubble-wrapper {
-    align-items: flex-end;
-}
-
-.message-bubble {
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-    max-width: 70%;
-}
-
-.theme-fleety .message-bubble.user {
-    background: #facc15;
-    color: #000;
-}
-
-.theme-fleety .message-bubble.admin {
-    background: #374151;
-    color: #fff;
-}
-
-.theme-material .message-bubble.user {
-    background: #2563eb;
-    color: #fff;
-}
-
-.theme-material .message-bubble.admin {
-    background: #f3f4f6;
-    color: #111827;
-}
-
-.theme-midnight .message-bubble.user {
-    background: #9333ea;
-    color: #fff;
-}
-
-.theme-midnight .message-bubble.admin {
-    background: #334155;
-    color: #f0e9ff;
-}
-
-.message-text {
-    font-size: 0.875rem;
-    word-wrap: break-word;
-    margin: 0;
-    padding: 0;
-    line-height: 1.4;
-}
-
-.message-meta {
-    font-size: 0.75rem;
-    opacity: 0.7;
-    margin-top: 0.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-}
-
-.message-meta.user {
-    justify-content: flex-end;
-}
-
-.message-meta.admin {
-    justify-content: flex-start;
-}
-
-.theme-fleety .message-meta {
-    color: #fff;
-}
-
-.theme-material .message-meta {
-    color: #111827;
-}
-
-.theme-midnight .message-meta {
-    color: #f0e9ff;
-}
-
-.read-icon {
-    width: 0.875rem;
-    height: 0.875rem;
-}
-
-.message-input-area {
-    padding: 1rem;
-    border-top: 1px solid;
-}
-
-.theme-fleety .message-input-area {
-    border-color: #374151;
-}
-
-.theme-material .message-input-area {
-    border-color: #d1d5db;
-}
-
-.theme-midnight .message-input-area {
-    border-color: #6b21a8;
-}
-
-.message-input-wrapper {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.message-input-field {
-    flex: 1;
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    border: 1px solid;
-    outline: none;
-    box-sizing: border-box;
-}
-
-.message-input-field:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px currentColor;
-}
-
-.theme-fleety .message-input-field {
-    background: #1f2937;
-    border-color: #4b5563;
-    color: #fff;
-}
-
-.theme-fleety .message-input-field:focus {
-    border-color: #facc15;
-    box-shadow: 0 0 0 2px #facc15;
-}
-
-.theme-material .message-input-field {
-    background: #f9fafb;
-    border-color: #d1d5db;
-    color: #111827;
-}
-
-.theme-material .message-input-field:focus {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 2px #2563eb;
-}
-
-.theme-midnight .message-input-field {
-    background: #1e293b;
-    border-color: #581c87;
-    color: #f0e9ff;
-}
-
-.theme-midnight .message-input-field:focus {
-    border-color: #a855f7;
-    box-shadow: 0 0 0 2px #a855f7;
-}
-
-.message-send-button {
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border: none;
-    transition: all 0.2s;
-    cursor: pointer;
-}
-
-.message-send-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.theme-fleety .message-send-button {
-    background: #facc15;
-    color: #000;
-}
-
-.theme-fleety .message-send-button:hover:not(:disabled) {
-    background: #fde047;
-}
-
-.theme-material .message-send-button {
-    background: #2563eb;
-    color: #fff;
-}
-
-.theme-material .message-send-button:hover:not(:disabled) {
-    background: #1d4ed8;
-}
-
-.theme-midnight .message-send-button {
-    background: #9333ea;
-    color: #fff;
-}
-
-.theme-midnight .message-send-button:hover:not(:disabled) {
-    background: #7e22ce;
-}
-
-.send-icon {
-    width: 1rem;
-    height: 1rem;
-}
-
-.spinner-icon {
-    width: 1.25rem;
-    height: 1.25rem;
-    animation: spin 1s linear infinite;
-}
-`;
-
-// API Configuration
-const API_URL = "http://localhost:8080/v1";
-
-// === Type Definitions ===
-type WSMessageType = 
-    | 'new_message' 
-    | 'status_change' 
-    | 'ticket_update' 
-    | 'error' 
-    | 'subscribed';
-
-interface WSMessage {
-    type: WSMessageType;
-    payload: any;
-}
-
-type TicketWSCallback = (message: WSMessage) => void;
 
 interface Ticket {
     id: string;
     slug: string;
+    project_id: string;
     title: string;
     description: string;
     status: 'open' | 'in_progress' | 'resolved' | 'closed';
     created_at: string;
     updated_at: string;
-    created_by_ai: boolean;
-    messages: TicketMessage[];
-}
-
-interface TicketMessage {
-    id: string;
-    author: 'user' | 'admin' | 'system';
-    content: string;
-    timestamp: string;
-    read_by: ('user' | 'admin')[]; // Array of who has read this message
-    type?: 'message' | 'status_change';
-    metadata?: {
-        old_status?: string;
-        new_status?: string;
-    };
-}
-
-interface CreateTicketRequest {
-    project_id: string;
-    title: string;
-    description: string;
-    public_key?: string;
-}
-
-interface AddMessageRequest {
-    author: 'user' | 'admin';
-    content: string;
-}
-
-interface UpdateTicketRequest {
-    status: 'open' | 'in_progress' | 'resolved' | 'closed';
-}
-
-interface SavedTicket {
-    slug: string;
-    title: string;
-    status: string;
-    unreadCount?: number;
+    messages: Message[];
 }
 
 interface SupportTicketWidgetProps {
     projectId: string;
-    theme?: 'fleety' | 'material' | 'midnight';
     dockPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
-    onOpen?: (handler: (options?: OpenOptions) => void) => void;
+    theme?: 'light' | 'dark' | 'material' | 'nord' | 'fleety' | 'system';
+    accentColor?: string;
 }
 
-interface OpenOptions {
-    view?: 'list' | 'create' | 'view';
-    prefillDescription?: string;
-    prefillTitle?: string;
-}
-
-// === WebSocket Service ===
-class TicketWebSocketService {
-    private connections: Map<string, WebSocket> = new Map();
-    private callbacks: Map<string, Set<TicketWSCallback>> = new Map();
-    private reconnectAttempts: Map<string, number> = new Map();
-    private maxReconnectAttempts = 5;
-    private reconnectDelay = 1000;
-    private connecting: Map<string, Promise<WebSocket>> = new Map();
-
-    connect(projectId: string, ticketSlug: string, callback: TicketWSCallback): () => void {
-        const key = `${projectId}/${ticketSlug}`;
-
-        if (!this.callbacks.has(key)) {
-            this.callbacks.set(key, new Set());
-        }
-        this.callbacks.get(key)!.add(callback);
-
-        if (this.connections.has(key)) {
-            return () => this.removeCallback(key, callback);
-        }
-
-        if (this.connecting.has(key)) {
-            return () => this.removeCallback(key, callback);
-        }
-
-        const connectionPromise = new Promise<WebSocket>((resolve, reject) => {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const backendUrl = "https://api.fleety.dev";
-            const wsUrl = `${protocol}//${backendUrl.replace(/^https?:\/\//, '')}/v1/tickets/${projectId}/${ticketSlug}/ws`;
-            const ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                console.log(`WebSocket connected for ticket: ${ticketSlug}`);
-                this.connections.set(key, ws);
-                this.reconnectAttempts.set(key, 0);
-                this.connecting.delete(key);
-                resolve(ws);
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const message: WSMessage = JSON.parse(event.data);
-                    this.notifyCallbacks(key, message);
-                } catch (error) {
-                    console.error('Error parsing WebSocket message:', error);
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error(`WebSocket error for ticket ${ticketSlug}:`, error);
-                this.connecting.delete(key);
-                reject(error);
-            };
-
-            ws.onclose = () => {
-                console.log(`WebSocket closed for ticket: ${ticketSlug}`);
-                this.connections.delete(key);
-                this.connecting.delete(key);
-                this.attemptReconnect(projectId, ticketSlug);
-            };
-        });
-
-        this.connecting.set(key, connectionPromise);
-        return () => this.removeCallback(key, callback);
-    }
-
-    disconnect(projectId: string, ticketSlug: string): void {
-        const key = `${projectId}/${ticketSlug}`;
-        const ws = this.connections.get(key);
-        if (ws) {
-            this.reconnectAttempts.delete(key);
-            ws.close();
-            this.connections.delete(key);
-            this.callbacks.delete(key);
-        }
-    }
-
-    disconnectAll(): void {
-        this.connections.forEach((ws) => ws.close());
-        this.connections.clear();
-        this.callbacks.clear();
-        this.reconnectAttempts.clear();
-        this.connecting.clear();
-    }
-
-    send(projectId: string, ticketSlug: string, message: any): void {
-        const key = `${projectId}/${ticketSlug}`;
-        const ws = this.connections.get(key);
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(message));
-        }
-    }
-
-    private removeCallback(key: string, callback: TicketWSCallback): void {
-        const callbacks = this.callbacks.get(key);
-        if (callbacks) {
-            callbacks.delete(callback);
-            if (callbacks.size === 0) {
-                const ws = this.connections.get(key);
-                if (ws) {
-                    this.reconnectAttempts.delete(key);
-                    ws.close();
-                    this.connections.delete(key);
-                    this.callbacks.delete(key);
-                }
-            }
-        }
-    }
-
-    private notifyCallbacks(key: string, message: WSMessage): void {
-        const callbacks = this.callbacks.get(key);
-        if (callbacks) {
-            callbacks.forEach(callback => callback(message));
-        }
-    }
-
-    private attemptReconnect(projectId: string, ticketSlug: string): void {
-        const key = `${projectId}/${ticketSlug}`;
-        const attempts = this.reconnectAttempts.get(key) || 0;
-
-        if (attempts >= this.maxReconnectAttempts) {
-            console.log(`Max reconnection attempts reached for ticket: ${ticketSlug}`);
-            this.reconnectAttempts.delete(key);
-            return;
-        }
-
-        const callbacks = this.callbacks.get(key);
-        if (!callbacks || callbacks.size === 0) {
-            this.reconnectAttempts.delete(key);
-            return;
-        }
-
-        const delay = this.reconnectDelay * Math.pow(2, attempts);
-        console.log(`Reconnecting to ticket ${ticketSlug} in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
-
-        setTimeout(() => {
-            this.reconnectAttempts.set(key, attempts + 1);
-            const existingCallbacks = Array.from(callbacks);
-            this.callbacks.delete(key);
-            existingCallbacks.forEach(callback => {
-                this.connect(projectId, ticketSlug, callback);
-            });
-        }, delay);
-    }
-}
-
-const ticketWS = new TicketWebSocketService();
-
-// === API Functions ===
-async function createTicket(data: CreateTicketRequest): Promise<Ticket> {
-    const response = await fetch(`${API_URL}/tickets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-    });
-    const result = await response.json();
-    if (!response.ok) {
-        if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After');
-            const retryMessage = retryAfter 
-                ? `Please wait ${retryAfter} seconds before creating another ticket.` 
-                : 'Please wait before creating another ticket.';
-            throw new Error(`rate_limit:${result.message || 'You\'re creating tickets too fast.'} ${retryMessage}`);
-        }
-        if (response.status === 402) {
-            throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
-        }
-        throw new Error(result.error || 'Failed to create ticket');
-    }
-    return result;
-}
-
-async function getTicket(projectId: string, slug: string, token?: string): Promise<Ticket> {
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}`, { headers });
-    const result = await response.json();
-    if (!response.ok) {
-        if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After');
-            const retryMessage = retryAfter 
-                ? `Please wait ${retryAfter} seconds before trying again.` 
-                : 'Please wait before trying again.';
-            throw new Error(`rate_limit:${result.message || 'You\'re sending requests too fast.'} ${retryMessage}`);
-        }
-        if (response.status === 402) {
-            throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
-        }
-        throw new Error(result.error || 'Failed to fetch ticket');
-    }
-    return result;
-}
-
-async function addMessage(projectId: string, slug: string, data: AddMessageRequest, token?: string): Promise<void> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}/messages`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(data)
-    });
-    const result = await response.json();
-    if (!response.ok) {
-        if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After');
-            const retryMessage = retryAfter 
-                ? `Please wait ${retryAfter} seconds before sending another message.` 
-                : 'Please wait before sending another message.';
-            throw new Error(`rate_limit:${result.message || 'You\'re sending messages too fast.'} ${retryMessage}`);
-        }
-        if (response.status === 402) {
-            throw new Error(`credits_depleted:${result.message || 'This project has run out of credits. AI features are disabled.'}`);
-        }
-        throw new Error(result.error || 'Failed to add message');
-    }
-}
-
-async function markMessagesAsRead(projectId: string, slug: string, reader: 'user' | 'admin'): Promise<void> {
-    const response = await fetch(`${API_URL}/tickets/${projectId}/${slug}/messages/read`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reader })
-    });
-    const result = await response.json();
-    if (!response.ok) {
-        throw new Error(result.error || 'Failed to mark messages as read');
-    }
-}
-
-// === Main Component ===
-const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
-    projectId,
-    theme = 'fleety',
-    dockPosition = 'bottom-left',
-    onOpen: onOpenProp
+const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({ 
+    projectId, 
+    dockPosition = 'bottom-right', 
+    theme = 'light',
+    accentColor 
 }) => {
-    // UI State
-    const [isOpen, setIsOpen] = useState(false);
-    const [currentView, setCurrentView] = useState<'list' | 'create' | 'view'>(() => {
-        const saved = localStorage.getItem('supportTickets');
-        return saved && JSON.parse(saved).length > 0 ? 'list' : 'create';
-    });
+    // State
+    const [isBrowser, setIsBrowser] = useState<boolean>(typeof window !== 'undefined');
+    const [isOpen, setIsOpen] = useState<boolean>(false);
+    const [activeView, setActiveView] = useState<'list' | 'create' | 'view'>('list'); // 'list' | 'create' | 'view'
+    const [tickets, setTickets] = useState<Ticket[]>([]);
+    const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+    const [messageInput, setMessageInput] = useState<string>('');
+    const [newTicketTitle, setNewTicketTitle] = useState<string>('');
+    const [newTicketDescription, setNewTicketDescription] = useState<string>('');
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [activeTheme, setActiveTheme] = useState<string>(theme);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    
+    // Refs
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const wsRef = useRef<WebSocket | null>(null);
+    const wsReconnectAttemptsRef = useRef<number>(0);
+    const wsReconnectTimeoutRef = useRef<number | null>(null);
+    const wsConnectionsRef = useRef<Map<string, WebSocket>>(new Map());
+    const scrollTimeoutsRef = useRef<number[]>([]);
+    const rateLimitTimerRef = useRef<number | null>(null);
 
-    // Ticket Creation
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
-    const [createError, setCreateError] = useState('');
+    // Rate limiting state
+    const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+    const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
+    const [rateLimitCooldown, setRateLimitCooldown] = useState<number>(0);
 
-    // Ticket Viewing
-    const [currentTicket, setCurrentTicket] = useState<Ticket | null>(null);
-    const [ticketSlug, setTicketSlug] = useState('');
-    const [messageContent, setMessageContent] = useState('');
-    const [isSendingMessage, setIsSendingMessage] = useState(false);
-    const [messageError, setMessageError] = useState('');
-    const [isLoadingTicket, setIsLoadingTicket] = useState(false);
-    const [ticketError, setTicketError] = useState('');
+    const TICKETS_STORAGE_KEY = `fleety_tickets_${projectId}`;
 
-    // Saved tickets (stored in localStorage)
-    const [savedTickets, setSavedTickets] = useState<SavedTicket[]>(() => {
-        const saved = localStorage.getItem('supportTickets');
-        return saved ? JSON.parse(saved) : [];
-    });
+    // Load tickets from localStorage on mount
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
 
-    // Calculate total unread messages across all tickets
-    const totalUnreadCount = savedTickets.reduce((sum, ticket) => sum + (ticket.unreadCount || 0), 0);
-
-    // Chat dimensions
-    const [chatWidth, setChatWidth] = useState(380);
-    const [chatHeight, setChatHeight] = useState(500);
-    const minWidth = 320;
-    const maxWidth = 600;
-    const minHeight = 400;
-    const maxHeight = 700;
-    const [isResizing, setIsResizing] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
-
-    // WebSocket
-    const wsUnsubscribe = useRef<(() => void) | null>(null);
-    const wsUnsubscribes = useRef(new Map<string, () => void>());
-
-    // Auto-scroll
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    // Responsive positioning
-    const [isMobile, setIsMobile] = useState(false);
-
-    const scrollToBottom = () => {
-        setTimeout(() => {
-            if (messagesEndRef.current) {
-                messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        const storedTickets = localStorage.getItem(TICKETS_STORAGE_KEY);
+        if (storedTickets) {
+            try {
+                setTickets(JSON.parse(storedTickets));
+            } catch (e) {
+                console.error('❌ Failed to parse stored tickets:', e);
             }
-        }, 100);
-    };
+        }
 
-    const saveTicketToList = (ticket: Ticket) => {
-        const unreadCount = ticket.messages.filter(msg =>
-            msg.author === 'admin' && !msg.read_by?.includes('user')
-        ).length;
-
-        const ticketInfo: SavedTicket = {
-            slug: ticket.slug,
-            title: ticket.title,
-            status: ticket.status,
-            unreadCount
+        // Cleanup
+        return () => {
+            scrollTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+            scrollTimeoutsRef.current = [];
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+            // Close all background WebSocket connections
+            wsConnectionsRef.current.forEach((connection) => connection.close());
+            wsConnectionsRef.current.clear();
+            if (wsReconnectTimeoutRef.current) {
+                clearTimeout(wsReconnectTimeoutRef.current);
+                wsReconnectTimeoutRef.current = null;
+            }
+            if (rateLimitTimerRef.current) {
+                clearInterval(rateLimitTimerRef.current);
+                rateLimitTimerRef.current = null;
+            }
         };
+    }, [projectId, TICKETS_STORAGE_KEY]);
 
-        setSavedTickets(prevSavedTickets => {
-            const newSavedTickets = [ticketInfo, ...prevSavedTickets.filter(t => t.slug !== ticket.slug)];
-            localStorage.setItem('supportTickets', JSON.stringify(newSavedTickets));
-            return newSavedTickets;
-        });
+    // Theme detection for system theme
+    useEffect(() => {
+        if (theme === 'system') {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            setActiveTheme(mediaQuery.matches ? 'dark' : 'light');
 
-        if (!wsUnsubscribes.current.has(ticket.slug)) {
-            const unsubscribe = ticketWS.connect(projectId, ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
-            wsUnsubscribes.current.set(ticket.slug, unsubscribe);
+            const handleChange = (e: MediaQueryListEvent) => {
+                setActiveTheme(e.matches ? 'dark' : 'light');
+            };
+
+            mediaQuery.addEventListener('change', handleChange);
+            return () => mediaQuery.removeEventListener('change', handleChange);
+        } else {
+            setActiveTheme(theme);
+        }
+    }, [theme]);
+
+    // Get position styles
+    const getPositionStyles = () => {
+        switch (dockPosition) {
+            case 'bottom-left':
+                return { bottom: '20px', left: '20px' };
+            case 'bottom-right':
+                return { bottom: '20px', right: '20px' };
+            case 'top-left':
+                return { top: '20px', left: '20px' };
+            case 'top-right':
+                return { top: '20px', right: '20px' };
+            default:
+                return { bottom: '20px', right: '20px' };
         }
     };
 
-    const handleBackgroundWebSocketMessage = async (ticketSlug: string, message: WSMessage) => {
-        if (isOpen && currentTicket && currentTicket.slug === ticketSlug && currentView === 'view') {
-            return;
+    // Save tickets to localStorage
+    const saveTicketsToStorage = useCallback((currentTickets: Ticket[]) => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(TICKETS_STORAGE_KEY, JSON.stringify(currentTickets));
+        }
+    }, [TICKETS_STORAGE_KEY]);
+
+    // Handle rate limit errors
+    const handleRateLimitError = (errorMsg: string) => {
+        let cooldown = 1; // Default 1 minute
+
+        // Parse rate limit info from error message
+        if (errorMsg.includes('3 tickets per hour')) {
+            setRateLimitMessage('Rate limit: Maximum 3 tickets per hour. Please try again later.');
+            cooldown = 60; // 60 minutes
+        } else if (errorMsg.includes('6 messages per minute')) {
+            setRateLimitMessage('Rate limit: Maximum 6 messages per minute. Please slow down.');
+            cooldown = 1; // 1 minute
+        } else if (errorMsg.toLowerCase().includes('rate limit')) {
+            setRateLimitMessage(errorMsg);
+            cooldown = 1; // Default 1 minute
+        } else {
+            return false; // Not a rate limit error
+        }
+        
+        setIsRateLimited(true);
+        setRateLimitCooldown(cooldown);
+
+        // Start countdown timer
+        let secondsLeft = cooldown * 60;
+        if (rateLimitTimerRef.current) {
+            clearInterval(rateLimitTimerRef.current);
         }
 
-        switch (message.type) {
-            case 'ticket_update':
-            case 'new_message':
-            case 'status_change':
-                try {
-                    const updated = await getTicket(projectId, ticketSlug);
-                    const unreadCount = updated.messages.filter(msg =>
-                        msg.author === 'admin' && !msg.read_by?.includes('user')
-                    ).length;
-
-                    setSavedTickets(prev => {
-                        const newTickets = prev.map(t =>
-                            t.slug === ticketSlug
-                                ? { ...t, status: updated.status, unreadCount }
-                                : t
-                        );
-                        localStorage.setItem('supportTickets', JSON.stringify(newTickets));
-                        return newTickets;
-                    });
-                } catch (err) {
-                    console.error('Error refreshing background ticket:', err);
+        rateLimitTimerRef.current = window.setInterval(() => {
+            secondsLeft--;
+            if (secondsLeft <= 0) {
+                setIsRateLimited(false);
+                setRateLimitMessage(null);
+                setRateLimitCooldown(0);
+                if (rateLimitTimerRef.current) {
+                    clearInterval(rateLimitTimerRef.current);
+                    rateLimitTimerRef.current = null;
                 }
-                break;
-        }
+            }
+        }, 1000);
+
+        return true;
     };
 
-    const handleCreateTicket = async () => {
-        if (!title.trim() || !description.trim()) {
-            setCreateError('Please fill in all fields');
-            return;
+    // Format cooldown time for display
+    const formatCooldownTime = () => {
+        if (!rateLimitCooldown) return '';
+
+        const totalSeconds = rateLimitCooldown * 60;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
         }
+        return `${seconds}s`;
+    };
 
-        setIsCreating(true);
-        setCreateError('');
+    // Auto-scroll to bottom
+    const autoScroll = useCallback(() => {
+        const timeoutId = window.setTimeout(() => {
+            if (messagesContainerRef.current) {
+                messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+            }
+            scrollTimeoutsRef.current = scrollTimeoutsRef.current.filter((id) => id !== timeoutId);
+        }, 100);
+        scrollTimeoutsRef.current.push(timeoutId);
+    }, []);
 
+    // Mark messages as read
+    const markMessagesAsRead = useCallback(async (slug: string) => {
         try {
-            const ticket = await createTicket({
-                project_id: projectId,
-                title: title.trim(),
-                description: description.trim()
+            await fetch(`${API_BASE}/tickets/${projectId}/${slug}/messages/read`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    reader: 'user'
+                })
+            });
+        } catch (error) {
+            console.error('❌ Mark as read error:', error);
+        }
+    }, [projectId]);
+
+    // Refresh ticket data without showing loading state
+    const refreshTicket = useCallback(async (slug: string) => {
+        try {
+            const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
+            if (!response.ok) {
+                console.warn('⚠️  [refreshTicket] Response not OK:', response.status);
+                return;
+            }
+
+            const ticketData = await response.json();
+
+            // Update selectedTicket if we are viewing it
+            setSelectedTicket(prevSelected => {
+                if (prevSelected && prevSelected.slug === slug) {
+                    // updating selectedTicket with new data
+                    // message count changed check could be here but we just update
+                    setTimeout(() => autoScroll(), 0);
+                    // Mark as read
+                    setTimeout(() => markMessagesAsRead(slug), 500);
+                    return ticketData;
+                }
+                return prevSelected;
             });
 
-            saveTicketToList(ticket);
-            setCurrentTicket(ticket);
-            setCurrentView('view');
-            setTitle('');
-            setDescription('');
-            wsUnsubscribe.current = ticketWS.connect(projectId, ticket.slug, handleWebSocketMessage);
-        } catch (error: any) {
-            const errorMsg = error.message || 'Failed to create ticket';
-            setCreateError(errorMsg.includes('rate_limit:')
-                ? '⏰ ' + errorMsg.replace('rate_limit:', '')
-                : errorMsg.includes('credits_depleted:')
-                    ? '💳 ' + errorMsg.replace('credits_depleted:', '')
-                    : errorMsg);
-        } finally {
-            setIsCreating(false);
-        }
-    };
-
-    const handleWebSocketMessage = (message: WSMessage) => {
-        if (!currentTicket) return;
-
-        console.log('WebSocket message received:', message);
-
-        switch (message.type) {
-            case 'ticket_update':
-                setCurrentTicket(message.payload as Ticket);
-                saveTicketToList(message.payload as Ticket);
-                scrollToBottom();
-                markMessagesAsRead(projectId, (message.payload as Ticket).slug, 'user').catch(err =>
-                    console.error('Error marking messages as read:', err)
-                );
-                break;
-            case 'new_message':
-            case 'status_change':
-                refreshCurrentTicket();
-                break;
-        }
-    };
-
-    const refreshCurrentTicket = async () => {
-        if (!currentTicket) return;
-
-        try {
-            const updated = await getTicket(projectId, currentTicket.slug);
-            setCurrentTicket(updated);
-            saveTicketToList(updated);
-            scrollToBottom();
-            await markMessagesAsRead(projectId, currentTicket.slug, 'user');
-            setSavedTickets(prev => {
-                const newTickets = prev.map(t =>
-                    t.slug === currentTicket.slug ? { ...t, unreadCount: 0 } : t
-                );
-                localStorage.setItem('supportTickets', JSON.stringify(newTickets));
+            // Update in tickets array
+            setTickets(prevTickets => {
+                const ticketIndex = prevTickets.findIndex((t) => t.slug === slug);
+                let newTickets = [...prevTickets];
+                if (ticketIndex !== -1) {
+                    newTickets[ticketIndex] = ticketData;
+                } else {
+                    // ticket not found in tickets array
+                }
+                saveTicketsToStorage(newTickets);
                 return newTickets;
             });
-        } catch (err) {
-            console.error('Error refreshing ticket:', err);
+        } catch (error) {
+            console.error('❌ [refreshTicket] Error:', error);
         }
-    };
+    }, [projectId, autoScroll, markMessagesAsRead, saveTicketsToStorage]);
 
-    const handleLoadTicket = async (slug: string) => {
-        if (!slug.trim()) return;
-
-        if (wsUnsubscribe.current) {
-            wsUnsubscribe.current();
-            wsUnsubscribe.current = null;
+    // Connect to WebSocket for a ticket
+    const connectWebSocket = useCallback((ticketSlug: string) => {
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
         }
 
-        setIsLoadingTicket(true);
-        setTicketError('');
+        const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
 
         try {
-            const ticket = await getTicket(projectId, slug.trim());
-            setCurrentTicket(ticket);
-            setCurrentView('view');
-            saveTicketToList(ticket);
+            wsRef.current = new WebSocket(wsUrl);
 
-            try {
-                await markMessagesAsRead(projectId, slug.trim(), 'user');
-                const refreshed = await getTicket(projectId, slug.trim());
-                setCurrentTicket(refreshed);
-                setSavedTickets(prev => {
-                    const newTickets = prev.map(t =>
-                        t.slug === slug.trim() ? { ...t, unreadCount: 0, status: refreshed.status } : t
-                    );
-                    localStorage.setItem('supportTickets', JSON.stringify(newTickets));
-                    return newTickets;
+            wsRef.current.onopen = () => {
+                wsReconnectAttemptsRef.current = 0;
+            };
+
+            wsRef.current.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // message received
+
+                    if (data.type === 'new_message') {
+                        // Refresh ticket to get the new message
+                        refreshTicket(ticketSlug);
+                    } else if (data.type === 'status_change') {
+                        // Refresh ticket to get status update
+                        refreshTicket(ticketSlug);
+                    } else if (data.type === 'ticket_update') {
+                        // Refresh ticket to get the full update (handles admin messages)
+                        refreshTicket(ticketSlug);
+                    } else if (data.type === 'subscribed') {
+                    } else if (data.type === 'error') {
+                        console.error('❌ [WebSocket] Server error:', data.payload);
+                        // Don't close connection on error, server will close if needed
+                    } else {
+                    }
+                } catch (e) {
+                    console.error('❌ [WebSocket] Failed to parse message:', e);
+                }
+            };
+            wsRef.current.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+            };
+
+            wsRef.current.onclose = () => {
+                wsRef.current = null;
+
+                // Attempt to reconnect with exponential backoff
+                // We need to check if we are still viewing this ticket. 
+                // Since this is a closure, we might need to check a ref or current state.
+                // For simplicity, we'll rely on the fact that if we switch views, we close the socket.
+                // But if we are still in 'view' mode and selectedTicket matches, we reconnect.
+                // However, accessing state in callback might be stale. 
+                // We will check if activeView is 'view' via a ref if we had one, or just try to reconnect if not manually closed.
+                
+                if (wsReconnectAttemptsRef.current < 5) {
+                    wsReconnectAttemptsRef.current++;
+                    const delay = Math.min(1000 * Math.pow(2, wsReconnectAttemptsRef.current), 30000);
+
+                    wsReconnectTimeoutRef.current = window.setTimeout(() => {
+                        // We should only reconnect if we are still supposed to be connected to this ticket
+                        // Ideally we check if selectedTicket.slug === ticketSlug
+                        // But we can't easily access current state here without refs.
+                        // For now, we'll just try to reconnect. If the component unmounted or view changed, 
+                        // the cleanup function or showListView would have cleared the timeout or closed the socket.
+                        connectWebSocket(ticketSlug);
+                    }, delay);
+                }
+            };
+        } catch (error) {
+            console.error('❌ Failed to create WebSocket:', error);
+        }
+    }, [projectId, refreshTicket]);
+
+    // Load ticket in background to update unread count
+    const loadTicketInBackground = useCallback(async (slug: string) => {
+        try {
+            const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
+            if (response.ok) {
+                const ticketData = await response.json();
+                setTickets(prevTickets => {
+                    const ticketIndex = prevTickets.findIndex((t) => t.slug === slug);
+                    if (ticketIndex !== -1) {
+                        const newTickets = [...prevTickets];
+                        newTickets[ticketIndex] = ticketData;
+                        saveTicketsToStorage(newTickets);
+                        return newTickets;
+                    }
+                    return prevTickets;
                 });
-            } catch (readErr) {
-                console.error('Error marking messages as read:', readErr);
+            }
+        } catch (error) {
+            console.error('❌ Failed to load ticket in background:', error);
+        }
+    }, [projectId, saveTicketsToStorage]);
+
+    // Connect to WebSocket for background ticket updates
+    const connectBackgroundWebSocket = useCallback((ticketSlug: string) => {
+        const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
+
+        try {
+            const bgWs = new WebSocket(wsUrl);
+
+            bgWs.onopen = () => {
+                wsConnectionsRef.current.set(ticketSlug, bgWs);
+            };
+
+            bgWs.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    // background message received
+
+                    // Only update if we're not currently viewing this ticket
+                    // We need to check selectedTicket. Since we are in a callback, we need a ref or functional update.
+                    // But here we just trigger loadTicketInBackground.
+                    // The check "if (!selectedTicket || selectedTicket.slug !== ticketSlug)" 
+                    // is hard to do perfectly without access to latest state.
+                    // However, if we are viewing the ticket, we should have closed the background connection for it.
+                    // So if this connection exists, we are likely not viewing it (or logic in loadTicket handles closing it).
+                    
+                    if (data.type === 'new_message' || data.type === 'ticket_update') {
+                        // Defer the update
+                        setTimeout(() => {
+                            loadTicketInBackground(ticketSlug);
+                        }, 0);
+                    }
+                } catch (e) {
+                    console.error('❌ [BgWebSocket] Failed to parse message:', e);
+                }
+            };
+            bgWs.onerror = (error) => {
+                console.error('❌ Background WebSocket error:', ticketSlug, error);
+            };
+
+            bgWs.onclose = () => {
+                wsConnectionsRef.current.delete(ticketSlug);
+            };
+
+            wsConnectionsRef.current.set(ticketSlug, bgWs);
+        } catch (error) {
+            console.error('❌ Failed to create background WebSocket:', error);
+        }
+    }, [projectId, loadTicketInBackground]);
+
+    // Connect WebSocket for all tickets in the list (for background updates)
+    const connectAllTicketWebSockets = useCallback(() => {
+        tickets.forEach((ticket) => {
+            if (!wsConnectionsRef.current.has(ticket.slug)) {
+                connectBackgroundWebSocket(ticket.slug);
+            }
+        });
+    }, [tickets, connectBackgroundWebSocket]);
+
+    // Create a new ticket
+    const createTicket = async () => {
+        if (!newTicketTitle.trim() || !newTicketDescription.trim() || isLoading) return;
+
+        // Check if rate limited
+        if (isRateLimited) {
+            setErrorMessage(rateLimitMessage || 'Rate limit active. Please wait before creating another ticket.');
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 3000);
+            return;
+        }
+
+        setIsLoading(true);
+        setErrorMessage(null);
+        setSuccessMessage(null);
+
+        try {
+            const response = await fetch(`${API_BASE}/tickets`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    project_id: projectId,
+                    title: newTicketTitle.trim(),
+                    description: newTicketDescription.trim()
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const error = errorData.error || `HTTP ${response.status}`;
+
+                // Handle rate limit errors
+                if (response.status === 429) {
+                    handleRateLimitError('Rate limit exceeded'); // Force trigger rate limit state
+                    setErrorMessage(rateLimitMessage || error);
+                } else if (handleRateLimitError(error)) {
+                    setErrorMessage(rateLimitMessage || error);
+                } else if (response.status === 404) {
+                    setErrorMessage('Project not found. Please check your Project ID.');
+                } else {
+                    throw new Error(error);
+                }
+                return;
             }
 
-            wsUnsubscribe.current = ticketWS.connect(projectId, slug.trim(), handleWebSocketMessage);
-            scrollToBottom();
-        } catch (error: any) {
-            const errorMsg = error.message || 'Failed to load ticket';
-            setTicketError(errorMsg.includes('rate_limit:')
-                ? '⏰ ' + errorMsg.replace('rate_limit:', '')
-                : errorMsg.includes('credits_depleted:')
-                    ? '💳 ' + errorMsg.replace('credits_depleted:', '')
-                    : errorMsg);
+            const newTicket = await response.json();
+
+            // Add to tickets array
+            const updatedTickets = [newTicket, ...tickets];
+            setTickets(updatedTickets);
+            saveTicketsToStorage(updatedTickets);
+
+            // Clear form
+            setNewTicketTitle('');
+            setNewTicketDescription('');
+
+            // Show success message
+            setSuccessMessage(`Ticket #${newTicket.slug} created successfully!`);
+            setTimeout(() => {
+                setSuccessMessage(null);
+            }, 3000);
+
+            // Load the ticket (which will connect WebSocket)
+            await loadTicket(newTicket.slug);
+        } catch (error) {
+            console.error('❌ Create ticket error:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to create ticket');
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 5000);
         } finally {
-            setIsLoadingTicket(false);
+            setIsLoading(false);
         }
     };
 
-    const handleSendMessage = async () => {
-        if (!messageContent.trim() || !currentTicket) return;
+    // Load ticket details
+    const loadTicket = async (slug: string) => {
+        setIsLoading(true);
+        setErrorMessage(null);
 
-        setIsSendingMessage(true);
-        setMessageError('');
+        try {
+            const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
 
-        const userMessage = messageContent.trim();
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const error = errorData.error || `HTTP ${response.status}`;
 
-        const optimisticMessage: TicketMessage = {
-            id: `temp-${Date.now()}`,
+                // Check if it's a rate limit error
+                if (response.status === 429 || error.toLowerCase().includes('rate limit')) {
+                    handleRateLimitError(error);
+                    return;
+                }
+
+                throw new Error(error);
+            }
+
+            const ticketData = await response.json();
+
+            setSelectedTicket(ticketData);
+
+            // Update in tickets array
+            setTickets(prevTickets => {
+                const ticketIndex = prevTickets.findIndex((t) => t.slug === slug);
+                let newTickets = [...prevTickets];
+                if (ticketIndex !== -1) {
+                    newTickets[ticketIndex] = ticketData;
+                } else {
+                    // Add to tickets array if not present
+                    newTickets = [ticketData, ...newTickets];
+                }
+                saveTicketsToStorage(newTickets);
+                return newTickets;
+            });
+
+            // Close background WebSocket for this ticket since we're viewing it
+            const bgWs = wsConnectionsRef.current.get(slug);
+            if (bgWs) {
+                bgWs.close();
+                wsConnectionsRef.current.delete(slug);
+            }
+
+            // Connect to WebSocket for real-time updates
+            connectWebSocket(slug);
+
+            // Mark messages as read
+            setTimeout(() => markMessagesAsRead(slug), 500);
+
+            // Auto-scroll
+            autoScroll();
+
+            setActiveView('view');
+        } catch (error) {
+            console.error('❌ Load ticket error:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to load ticket');
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 5000);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Send message to ticket
+    const sendMessage = async () => {
+        if (!messageInput.trim() || !selectedTicket || isLoading) return;
+
+        // Check if rate limited
+        if (isRateLimited) {
+            setErrorMessage(rateLimitMessage || 'Rate limit active. Please wait before sending another message.');
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 3000);
+            return;
+        }
+
+        const content = messageInput.trim();
+        setMessageInput('');
+        setIsLoading(true);
+        setErrorMessage(null);
+
+        // Optimistic update
+        const optimisticId = 'temp-' + Date.now();
+        const optimisticMessage: Message = {
+            id: optimisticId,
             author: 'user',
-            content: userMessage,
+            content: content,
             timestamp: new Date().toISOString(),
             read_by: ['user']
         };
 
-        setCurrentTicket(prev => prev ? { ...prev, messages: [...prev.messages, optimisticMessage] } : null);
-        setMessageContent('');
-        scrollToBottom();
+        const previousSelectedTicket = { ...selectedTicket };
+
+        // Update UI immediately
+        const updatedTicket = {
+            ...selectedTicket,
+            messages: [...selectedTicket.messages, optimisticMessage]
+        };
+        setSelectedTicket(updatedTicket);
+
+        // Update in tickets array (but don't save to storage to avoid persisting temp ID)
+        setTickets(prevTickets => {
+            const ticketIndex = prevTickets.findIndex((t) => t.slug === selectedTicket.slug);
+            if (ticketIndex !== -1) {
+                const newTickets = [...prevTickets];
+                newTickets[ticketIndex] = { ...updatedTicket };
+                return newTickets;
+            }
+            return prevTickets;
+        });
+
+        // Auto-scroll
+        autoScroll();
 
         try {
-            await addMessage(projectId, currentTicket.slug, {
-                author: 'user',
-                content: userMessage
+            const response = await fetch(
+                `${API_BASE}/tickets/${projectId}/${selectedTicket.slug}/messages`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        author: 'user',
+                        content: content
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                const error = errorData.error || `HTTP ${response.status}`;
+
+                // Handle rate limit errors
+                if (response.status === 429) {
+                    handleRateLimitError('Rate limit exceeded');
+                    setErrorMessage(rateLimitMessage || error);
+                    setMessageInput(content); // Restore message
+                    
+                    // Revert optimistic update
+                    setSelectedTicket(previousSelectedTicket);
+                    setTickets(prevTickets => {
+                        const ticketIndex = prevTickets.findIndex((t) => t.slug === previousSelectedTicket.slug);
+                        if (ticketIndex !== -1) {
+                            const newTickets = [...prevTickets];
+                            newTickets[ticketIndex] = previousSelectedTicket;
+                            return newTickets;
+                        }
+                        return prevTickets;
+                    });
+                } else if (handleRateLimitError(error)) {
+                    setErrorMessage(rateLimitMessage || error);
+                    setMessageInput(content); // Restore message
+
+                    // Revert optimistic update
+                    setSelectedTicket(previousSelectedTicket);
+                    setTickets(prevTickets => {
+                        const ticketIndex = prevTickets.findIndex((t) => t.slug === previousSelectedTicket.slug);
+                        if (ticketIndex !== -1) {
+                            const newTickets = [...prevTickets];
+                            newTickets[ticketIndex] = previousSelectedTicket;
+                            return newTickets;
+                        }
+                        return prevTickets;
+                    });
+                } else {
+                    throw new Error(error);
+                }
+                return;
+            }
+
+            // message sent
+
+            // Reload ticket to get the new message (replaces optimistic one)
+            await loadTicket(selectedTicket.slug);
+        } catch (error) {
+            console.error('❌ Send message error:', error);
+            setErrorMessage(error instanceof Error ? error.message : 'Failed to send message');
+            setMessageInput(content); // Restore message
+
+            // Revert optimistic update
+            setSelectedTicket(previousSelectedTicket);
+            setTickets(prevTickets => {
+                const ticketIndex = prevTickets.findIndex((t) => t.slug === selectedTicket.slug);
+                if (ticketIndex !== -1) {
+                    const newTickets = [...prevTickets];
+                    newTickets[ticketIndex] = { ...previousSelectedTicket };
+                    return newTickets;
+                }
+                return prevTickets;
             });
-            scrollToBottom();
-        } catch (error: any) {
-            setCurrentTicket(prev => prev ? { ...prev, messages: prev.messages.filter(m => m.id !== optimisticMessage.id) } : null);
-            setMessageContent(userMessage);
-            const errorMsg = error.message || 'Failed to send message';
-            setMessageError(errorMsg.includes('rate_limit:')
-                ? '⏰ ' + errorMsg.replace('rate_limit:', '')
-                : errorMsg.includes('credits_depleted:')
-                    ? '💳 ' + errorMsg.replace('credits_depleted:', '')
-                    : errorMsg);
+
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 5000);
         } finally {
-            setIsSendingMessage(false);
+            setIsLoading(false);
         }
     };
 
-    const handleClose = () => {
-        setIsOpen(false);
-        if (wsUnsubscribe.current) {
-            wsUnsubscribe.current();
-            wsUnsubscribe.current = null;
-        }
-    };
-
-    const handleOpen = useCallback((options?: OpenOptions) => {
-        setIsOpen(true);
-        if (options?.view) setCurrentView(options.view);
-        if (options?.prefillDescription) setDescription(options.prefillDescription);
-        if (options?.prefillTitle) setTitle(options.prefillTitle);
-        refreshUnreadCounts();
-        if (currentView === 'view' && currentTicket && !wsUnsubscribe.current) {
-            wsUnsubscribe.current = ticketWS.connect(projectId, currentTicket.slug, handleWebSocketMessage);
-        }
-    }, [projectId, currentTicket, currentView]);
-
-    const refreshUnreadCounts = async () => {
-        for (const ticket of savedTickets) {
-            try {
-                const updated = await getTicket(projectId, ticket.slug);
-                const unreadCount = updated.messages.filter(msg =>
-                    msg.author === 'admin' && !msg.read_by?.includes('user')
-                ).length;
-
-                setSavedTickets(prev => prev.map(t =>
-                    t.slug === ticket.slug ? { ...t, unreadCount } : t
-                ));
-            } catch (err) {
-                console.error('Error refreshing ticket:', err);
+    // Handle key press
+    const handleKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (activeView === 'view') {
+                sendMessage();
             }
         }
-        localStorage.setItem('supportTickets', JSON.stringify(savedTickets));
     };
 
-    const goToList = () => {
-        setCurrentView('list');
-        setCurrentTicket(null);
-        if (wsUnsubscribe.current) {
-            wsUnsubscribe.current();
-            wsUnsubscribe.current = null;
+    // Toggle widget
+    const toggleWidget = () => {
+        const newIsOpen = !isOpen;
+        setIsOpen(newIsOpen);
+        if (newIsOpen) {
+            // Connect WebSocket for all tickets when opening
+            connectAllTicketWebSockets();
+        } else {
+            // Close WebSocket when closing widget
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+            setActiveView('list');
+            setSelectedTicket(null);
         }
     };
 
-    const goToCreate = () => {
-        setCurrentView('create');
-        setCreateError('');
+    // Navigate to create view
+    const showCreateView = () => {
+        setActiveView('create');
+        setNewTicketTitle('');
+        setNewTicketDescription('');
+        setErrorMessage(null);
+        setSuccessMessage(null);
     };
 
-    const formatDate = (dateString: string): string => {
+    // Navigate to list view
+    const showListView = () => {
+        const previousTicketSlug = selectedTicket?.slug;
+
+        setActiveView('list');
+        setSelectedTicket(null);
+
+        // Close active ticket WebSocket
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
+        // Reconnect background WebSocket for the ticket we just left
+        if (previousTicketSlug && !wsConnectionsRef.current.has(previousTicketSlug)) {
+            connectBackgroundWebSocket(previousTicketSlug);
+        }
+    };
+
+    // Format message content
+    const formatMessageContent = (content: string, isUser: boolean) => {
+        if (isUser) {
+            return content
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;')
+                .replace(/\n/g, '<br>');
+        } else {
+            try {
+                return marked.parse(content);
+            } catch (error) {
+                console.error('Error parsing markdown:', error);
+                return content.replace(/\n/g, '<br>');
+            }
+        }
+    };
+
+    // Get unread count for a ticket
+    const getUnreadCount = (ticket: Ticket) => {
+        return ticket.messages.filter((m) => m.author === 'admin' && !m.read_by.includes('user'))
+            .length;
+    };
+
+    // Format date
+    const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
@@ -1907,436 +804,1330 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
         if (diffMins < 60) return `${diffMins}m ago`;
         if (diffHours < 24) return `${diffHours}h ago`;
         if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString();
-    };
 
-    const getAuthorDisplayName = (author: string): string => {
-        if (author === 'user') return 'You';
-        if (author === 'system') return 'System';
-        if (author === 'admin') return 'Support';
-        return author;
-    };
-
-    const getStatusLabel = (status: string): string => {
-        return status.replace('_', ' ').toUpperCase();
-    };
-
-    const toggleFullscreen = () => {
-        setIsFullscreen(!isFullscreen);
-    };
-
-    const getResizeHandles = (position: typeof dockPosition): { corner: 'nw' | 'ne' | 'sw' | 'se'; edges: ('n' | 's' | 'w' | 'e')[] } => {
-        switch (position) {
-            case 'bottom-right': return { corner: 'nw', edges: ['n', 'w'] };
-            case 'bottom-left': return { corner: 'ne', edges: ['n', 'e'] };
-            case 'top-right': return { corner: 'sw', edges: ['s', 'w'] };
-            case 'top-left': return { corner: 'se', edges: ['s', 'e'] };
-        }
-    };
-
-    const startResize = (event: React.MouseEvent, direction: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e') => {
-        setIsResizing(true);
-        const startX = event.clientX;
-        const startY = event.clientY;
-        const startWidth = chatWidth;
-        const startHeight = chatHeight;
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            let newWidth = startWidth;
-            let newHeight = startHeight;
-
-            if (direction.includes('w')) newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - deltaX));
-            else if (direction.includes('e')) newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + deltaX));
-
-            if (direction.includes('n')) newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight - deltaY));
-            else if (direction.includes('s')) newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
-
-            setChatWidth(newWidth);
-            setChatHeight(newHeight);
-        };
-
-        const handleMouseUp = () => {
-            setIsResizing(false);
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-    };
-
-    useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-
-        const saved = localStorage.getItem('supportTickets');
-        if (saved) setSavedTickets(JSON.parse(saved));
-
-        const handleTicketCreated = (event: Event) => {
-            const customEvent = event as CustomEvent<{ ticketSlug: string }>;
-            console.log('🎫 SupportTicketWidget received ticket-created event:', customEvent.detail.ticketSlug);
-            setIsOpen(true);
-            handleLoadTicket(customEvent.detail.ticketSlug);
-        };
-        window.addEventListener('ticket-created', handleTicketCreated as EventListener);
-
-        const handleClickOutside = (event: MouseEvent) => {
-            const target = event.target as Element;
-            if (isOpen && !target.closest('.ticket-widget') && !target.closest('.ticket-fab')) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener('click', handleClickOutside);
-
-        return () => {
-            window.removeEventListener('resize', checkMobile);
-            window.removeEventListener('ticket-created', handleTicketCreated as EventListener);
-            document.removeEventListener('click', handleClickOutside);
-            wsUnsubscribes.current.forEach((unsubscribe) => unsubscribe());
-            wsUnsubscribes.current.clear();
-        };
-    }, [isOpen]);
-
-    useEffect(() => {
-        if (onOpenProp) {
-            onOpenProp(handleOpen);
-        }
-    }, [onOpenProp, handleOpen]);
-
-    useEffect(() => {
-        savedTickets.forEach(ticket => {
-            if (!wsUnsubscribes.current.has(ticket.slug)) {
-                const unsubscribe = ticketWS.connect(projectId, ticket.slug, (message) => handleBackgroundWebSocketMessage(ticket.slug, message));
-                wsUnsubscribes.current.set(ticket.slug, unsubscribe);
-            }
+        return date.toLocaleDateString([], {
+            month: 'short',
+            day: 'numeric'
         });
-    }, [savedTickets, projectId]);
+    };
 
-    const resizeHandles = getResizeHandles(dockPosition);
+    // Format timestamp
+    const formatTimestamp = (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    if (!isBrowser) return null;
 
     return (
         <>
-            <style>{styles}</style>
-            {/* Floating Action Button */}
-            <button
-                onClick={(e) => { e.stopPropagation(); isOpen ? handleClose() : handleOpen(); }}
-                className={`ticket-fab theme-${theme} dock-${dockPosition} ${isMobile ? 'mobile' : 'desktop'}`}
-                aria-label={isOpen ? "Close Support Tickets" : "Open Support Tickets"}
+            <style>{STYLES}</style>
+            <div
+                className="ticket-widget-container"
+                data-theme={activeTheme}
+                data-dock={dockPosition}
+                style={getPositionStyles()}
             >
-                <div className="fab-icon-wrapper">
-                    <div className={`icon-container ${isOpen ? 'open' : ''}`}>
-                        <svg className="icon icon-default" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        <svg className="icon icon-close" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </div>
-                    {totalUnreadCount > 0 && !isOpen && <div className="unread-indicator"></div>}
-                </div>
-            </button>
-
-            {/* Chat Widget */}
-            {isOpen && (
-                <div
-                    className={`ticket-widget theme-${theme} dock-${dockPosition} ${isMobile ? 'mobile' : 'desktop'} ${isResizing ? 'resizing' : ''} ${isFullscreen ? 'fullscreen' : ''}`}
-                    style={isFullscreen ? {} : { width: `${chatWidth}px`, height: `${chatHeight}px` }}
-                    role="dialog"
-                    aria-label="Support tickets"
-                    tabIndex={-1}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                >
-                    {!isFullscreen && (
-                        <>
-                            <div
-                                role="button"
-                                tabIndex={0}
-                                onMouseDown={(e) => startResize(e, resizeHandles.corner)}
-                                className={`resize-handle corner-${resizeHandles.corner}`}
-                                title="Resize widget"
-                            />
-                            {resizeHandles.edges.map(edge => (
-                                <div
-                                    key={edge}
-                                    role="button"
-                                    tabIndex={0}
-                                    onMouseDown={(e) => startResize(e, edge)}
-                                    className={`resize-handle edge-${edge}`}
-                                    title={`Resize ${edge === 'n' || edge === 's' ? 'height' : 'width'}`}
-                                />
-                            ))}
-                        </>
-                    )}
-
-                    <div className="widget-header">
-                        <div className="header-left">
-                            {currentView !== 'list' && (
-                                <button onClick={goToList} className="back-button" aria-label="Back to list">
-                                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                                    </svg>
-                                </button>
-                            )}
-                            <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                            </svg>
-                            <h3 className="header-title">
-                                {currentView === 'list' && 'Support Tickets'}
-                                {currentView === 'create' && 'Create Ticket'}
-                                {currentView === 'view' && currentTicket && (
-                                    <span className="ticket-title-sm">{currentTicket.title}</span>
-                                )}
-                            </h3>
-                        </div>
-                        <div className="header-right">
-                            <button onClick={toggleFullscreen} className="fullscreen-button" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
-                                {isFullscreen ? (
-                                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                ) : (
-                                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                    </svg>
-                                )}
-                            </button>
-                            <button onClick={handleClose} className="close-button" aria-label="Minimize">
-                                <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                {isOpen && (
+                    <div className="ticket-window">
+                        {/* Header */}
+                        <div className="ticket-header">
+                            <div className="header-content">
+                                {activeView === 'list' ? (
+                                    <>
+                                        <div className="header-icon">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                                <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="2"/>
+                                                <path d="M9 12H15M9 16H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                            </svg>
+                                        </div>
+                                        <div className="header-text">
+                                            <div className="header-title">Support Tickets</div>
+                                            <div className="header-subtitle">
+                                                {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : activeView === 'create' ? (
+                                    <>
+                                        <button className="back-button" onClick={showListView} aria-label="Back to list">
+                                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                                <path
+                                                    d="M12 4L6 10L12 16"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            </svg>
+                                        </button>
+                                        <div className="header-text">
+                                            <div className="header-title">Create Ticket</div>
+                                        </div>
+                                    </>
+                                ) : activeView === 'view' && selectedTicket ? (
+                                    <>
+                                        <button className="back-button" onClick={showListView} aria-label="Back to list">
+                                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                                <path
+                                                    d="M12 4L6 10L12 16"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            </svg>
+                                        </button>
+                                        <div className="header-text">
+                                            <div className="header-title">{selectedTicket.title}</div>
+                                            <div className="header-subtitle">
+                                                <span style={{ opacity: 0.8 }}>#{selectedTicket.slug}</span>
+                                            </div>
+                                        </div>
+                                        <span className={`status-badge status-${selectedTicket.status}`}>
+                                            {selectedTicket.status.replace(/_/g, ' ')}
+                                        </span>
+                                    </>
+                                ) : null}
+                            </div>
+                            <button className="close-button" onClick={toggleWidget} aria-label="Close tickets">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                    <path
+                                        d="M15 5L5 15M5 5L15 15"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                    />
                                 </svg>
                             </button>
                         </div>
-                    </div>
 
-                    <div className="widget-content">
-                        {currentView === 'list' && (
-                            <div className="ticket-list-view">
-                                <div className="ticket-list-content">
-                                    <button onClick={goToCreate} className="create-ticket-button">
-                                        <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                                        </svg>
-                                        Create New Ticket
-                                    </button>
-
-                                    {savedTickets.length > 0 ? (
-                                        <div className="tickets-section">
-                                            <h4 className="section-title">Your Tickets</h4>
-                                            {savedTickets.map(ticket => (
-                                                <button
-                                                    key={ticket.slug}
-                                                    onClick={() => handleLoadTicket(ticket.slug)}
-                                                    className="ticket-card"
-                                                >
-                                                    <div className="ticket-card-content">
-                                                        <div className="ticket-card-left">
-                                                            {ticket.unreadCount !== undefined && ticket.unreadCount > 0 && (
-                                                                <div className="unread-dot" title={`${ticket.unreadCount} unread message${ticket.unreadCount > 1 ? 's' : ''}`}></div>
-                                                            )}
-                                                            <div className="ticket-info">
-                                                                <p className="ticket-title">{ticket.title}</p>
-                                                                <p className="ticket-slug">#{ticket.slug}</p>
-                                                            </div>
-                                                        </div>
+                        {/* Content */}
+                        <div className="ticket-content">
+                            {activeView === 'list' ? (
+                                /* Tickets List */
+                                <>
+                                    <div className="tickets-list">
+                                        {errorMessage && (
+                                            <div className="error-message">{errorMessage}</div>
+                                        )}
+                                        {isRateLimited && rateLimitMessage && (
+                                            <div className="rate-limit-notice">
+                                                <div className="rate-limit-icon">
+                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
+                                                        <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                                    </svg>
+                                                </div>
+                                                <div className="rate-limit-text">
+                                                    <strong>Rate Limit Active</strong>
+                                                    <p>{rateLimitMessage}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {tickets.length === 0 ? (
+                                            <div className="empty-state">
+                                                <div className="empty-icon">
+                                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                                                        <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                                        <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                                                    </svg>
+                                                </div>
+                                                <div className="empty-title">No tickets yet</div>
+                                                <div className="empty-text">Create your first support ticket to get started</div>
+                                            </div>
+                                        ) : (
+                                            tickets.map((ticket) => (
+                                                <button key={ticket.slug} className="ticket-item" onClick={() => loadTicket(ticket.slug)}>
+                                                    <div className="ticket-item-header">
+                                                        <div className="ticket-item-title">{ticket.title}</div>
                                                         <span className={`status-badge status-${ticket.status}`}>
-                                                            {getStatusLabel(ticket.status)}
+                                                            {ticket.status.replace(/_/g, ' ')}
                                                         </span>
                                                     </div>
+                                                    <div className="ticket-item-meta">
+                                                        <span className="ticket-item-slug">#{ticket.slug}</span>
+                                                        <span className="ticket-item-date">{formatDate(ticket.created_at)}</span>
+                                                        {getUnreadCount(ticket) > 0 && (
+                                                            <span className="unread-badge">{getUnreadCount(ticket)}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="ticket-item-description">
+                                                        {ticket.description.substring(0, 100)}{ticket.description.length > 100
+                                                            ? '...'
+                                                            : ''}
+                                                    </div>
                                                 </button>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="empty-state">
-                                            <p>No tickets yet</p>
-                                        </div>
-                                    )}
-                                </div>
+                                            ))
+                                        )}
+                                    </div>
 
-                                <div className="load-by-slug-section">
-                                    <h4 className="section-title">Have a ticket ID?</h4>
-                                    <div className="slug-input-wrapper">
-                                        <input
-                                            type="text"
-                                            value={ticketSlug}
-                                            onChange={(e) => setTicketSlug(e.target.value)}
-                                            onKeyPress={(e) => {
-                                                if (e.key === 'Enter' && ticketSlug.trim() && !isLoadingTicket) {
-                                                    handleLoadTicket(ticketSlug);
-                                                }
-                                            }}
-                                            placeholder="Enter ticket ID"
-                                            className="slug-input"
-                                        />
-                                        <button
-                                            onClick={() => handleLoadTicket(ticketSlug)}
-                                            disabled={!ticketSlug.trim() || isLoadingTicket}
-                                            className="load-button"
-                                        >
-                                            {isLoadingTicket ? '...' : 'Load'}
+                                    {/* Create Button */}
+                                    <div className="action-bar">
+                                        <button className="create-ticket-button" onClick={showCreateView}>
+                                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                                <path
+                                                    d="M10 4V16M4 10H16"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                />
+                                            </svg>
+                                            Create New Ticket
                                         </button>
                                     </div>
-                                    {ticketError && (
-                                        <div className="error-message">
-                                            <p>{ticketError}</p>
+                                </>
+                            ) : activeView === 'create' ? (
+                                /* Create Ticket Form */
+                                <div className="create-form">
+                                    {successMessage && (
+                                        <div className="success-message">{successMessage}</div>
+                                    )}
+                                    {errorMessage && (
+                                        <div className="error-message">{errorMessage}</div>
+                                    )}
+                                    {isRateLimited && rateLimitMessage && (
+                                        <div className="rate-limit-notice">
+                                            <div className="rate-limit-icon">
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
+                                                    <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                                </svg>
+                                            </div>
+                                            <div className="rate-limit-text">
+                                                <strong>Rate Limit Active</strong>
+                                                <p>{rateLimitMessage}</p>
+                                            </div>
                                         </div>
                                     )}
-                                </div>
-                            </div>
-                        )}
 
-                        {currentView === 'create' && (
-                            <div className="create-ticket-view">
-                                <div className="create-form">
-                                    <div className="form-field">
-                                        <label htmlFor="ticket-title" className="form-label">Title</label>
+                                    <div className="form-group">
+                                        <label htmlFor="ticket-title">Title</label>
                                         <input
                                             id="ticket-title"
                                             type="text"
-                                            value={title}
-                                            onChange={(e) => setTitle(e.target.value)}
-                                            placeholder="Brief summary of your issue"
-                                            maxLength={200}
                                             className="form-input"
+                                            value={newTicketTitle}
+                                            onChange={(e) => setNewTicketTitle(e.target.value)}
+                                            placeholder="Brief description of your issue"
+                                            disabled={isLoading || isRateLimited}
                                         />
                                     </div>
 
-                                    <div className="form-field form-field-flex">
-                                        <label htmlFor="ticket-description" className="form-label">Description</label>
+                                    <div className="form-group">
+                                        <label htmlFor="ticket-description">Description</label>
                                         <textarea
                                             id="ticket-description"
-                                            value={description}
-                                            onChange={(e) => setDescription(e.target.value)}
+                                            className="form-textarea"
+                                            value={newTicketDescription}
+                                            onChange={(e) => setNewTicketDescription(e.target.value)}
                                             placeholder="Provide detailed information about your issue..."
-                                            maxLength={5000}
-                                            className="form-textarea form-textarea-flex"
-                                        />
-                                        <p className="char-counter">
-                                            {description.length}/5000 characters
-                                        </p>
+                                            rows={8}
+                                            disabled={isLoading || isRateLimited}
+                                        ></textarea>
                                     </div>
 
-                                    {createError && (
-                                        <div className="error-message">
-                                            <p>{createError}</p>
-                                        </div>
-                                    )}
                                     <button
-                                        onClick={handleCreateTicket}
-                                        disabled={isCreating || !title.trim() || !description.trim()}
                                         className="submit-button"
+                                        onClick={createTicket}
+                                        disabled={!newTicketTitle.trim() ||
+                                            !newTicketDescription.trim() ||
+                                            isLoading ||
+                                            isRateLimited}
                                     >
-                                        {isCreating ? 'Creating...' : 'Create Ticket'}
+                                        {isLoading ? 'Creating...' : isRateLimited ? 'Rate Limited' : 'Create Ticket'}
                                     </button>
                                 </div>
-                            </div>
-                        )}
-
-                        {currentView === 'view' && currentTicket && (
-                            <div className="view-ticket-container">
-                                <div className="ticket-info-header">
-                                    <div className="ticket-info-content">
-                                        <div className="ticket-slug-wrapper">
-                                            <p className="ticket-slug-text">#{currentTicket.slug}</p>
-                                        </div>
-                                        <span className={`status-badge status-${currentTicket.status}`}>
-                                            {getStatusLabel(currentTicket.status)}
-                                        </span>
-                                    </div>
-                                    <p className="ticket-description">{currentTicket.description}</p>
-                                </div>
-
-                                <div className="messages-list">
-                                    {currentTicket.messages.map(message => (
-                                        message.type === 'status_change' && message.author === 'system' ? (
-                                            <div key={message.id} className="system-message-wrapper">
-                                                <div className="system-message-container">
-                                                    <div className="connector-line-top"></div>
-                                                    <div className="system-message">
-                                                        <div className="system-message-content">
-                                                            <div className="status-icon-wrapper">
-                                                                <svg className="status-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                                                                        d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                                                </svg>
-                                                            </div>
-                                                            <span className="system-message-text">{message.content}</span>
-                                                        </div>
-                                                        <div className="system-message-timestamp">
-                                                            {formatDate(message.timestamp)}
-                                                        </div>
-                                                    </div>
-                                                    <div className="connector-line-bottom"></div>
+                            ) : activeView === 'view' && selectedTicket ? (
+                                /* Ticket View */
+                                <div className="ticket-view">
+                                    {/* Messages */}
+                                    <div className="messages-section">
+                                        <div className="messages-container" ref={messagesContainerRef}>
+                                            {/* Initial ticket description as first message */}
+                                            <div
+                                                className="message"
+                                                style={{ alignSelf: 'flex-end', alignItems: 'flex-end' }}
+                                            >
+                                                <div
+                                                    className="message-content"
+                                                    style={{ background: 'var(--user-msg-bg)', color: 'var(--user-msg-text)', borderBottomRightRadius: '4px' }}
+                                                >
+                                                    {selectedTicket.description}
+                                                </div>
+                                                <div className="message-time">
+                                                    {formatTimestamp(selectedTicket.created_at)}
+                                                    <span className="message-author">You</span>
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <div key={message.id} className={`chat-message ${message.author}`}>
-                                                <div className="message-bubble-wrapper">
-                                                    <div className={`message-bubble ${message.author}`}>
-                                                        <p className="message-text">{message.content}</p>
-                                                    </div>
-                                                    <p className={`message-meta ${message.author}`}>
-                                                        <span>{getAuthorDisplayName(message.author)} · {formatDate(message.timestamp)}</span>
-                                                        {message.author === 'user' && message.read_by?.includes('admin') && (
-                                                            <svg className="read-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                            </svg>
+                                            
+                                            {/* Subsequent messages */}
+                                            {selectedTicket.messages.map((message) => (
+                                                <div
+                                                    key={message.id}
+                                                    className="message"
+                                                    style={{
+                                                        alignSelf: message.author === 'user' ? 'flex-end' : 'flex-start',
+                                                        alignItems: message.author === 'user' ? 'flex-end' : 'flex-start'
+                                                    }}
+                                                >
+                                                    <div
+                                                        className="message-content"
+                                                        style={{
+                                                            background: message.author === 'user' ? 'var(--user-msg-bg)' : 'var(--admin-msg-bg)',
+                                                            color: message.author === 'user' ? 'var(--user-msg-text)' : 'var(--admin-msg-text)',
+                                                            [message.author === 'user' ? 'borderBottomRightRadius' : 'borderBottomLeftRadius']: '4px'
+                                                        }}
+                                                        dangerouslySetInnerHTML={{ __html: formatMessageContent(message.content, message.author === 'user') }}
+                                                    />
+                                                    <div className="message-time">
+                                                        {formatTimestamp(message.timestamp)}
+                                                        {message.author === 'user' ? (
+                                                            <span className="message-author">You</span>
+                                                        ) : (
+                                                            <span className="message-author">Support</span>
                                                         )}
-                                                    </p>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )
-                                    ))}
-                                    <div ref={messagesEndRef}></div>
-                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                <div className="message-input-area">
-                                    {messageError && (
-                                        <div className="error-message">
-                                            <p>{messageError}</p>
+                                    {/* Message Input */}
+                                    {selectedTicket.status !== 'closed' ? (
+                                        <div className="message-input-container">
+                                            {errorMessage && (
+                                                <div className="error-message-inline">{errorMessage}</div>
+                                            )}
+                                            {isRateLimited && rateLimitMessage && (
+                                                <div className="rate-limit-notice-inline">
+                                                    <span className="rate-limit-icon-small">
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                                            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
+                                                            <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                                        </svg>
+                                                    </span>
+                                                    <span>{rateLimitMessage}</span>
+                                                </div>
+                                            )}
+                                            <div className="input-wrapper">
+                                                <textarea
+                                                    className="message-input"
+                                                    value={messageInput}
+                                                    onChange={(e) => setMessageInput(e.target.value)}
+                                                    onKeyDown={handleKeyPress}
+                                                    placeholder="Type your message..."
+                                                    rows={2}
+                                                    disabled={isLoading || isRateLimited}
+                                                ></textarea>
+                                                <button
+                                                    className="send-button"
+                                                    onClick={sendMessage}
+                                                    disabled={!messageInput.trim() || isLoading || isRateLimited}
+                                                    aria-label="Send message"
+                                                    title={isRateLimited ? 'Rate limited' : 'Send message'}
+                                                >
+                                                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                                        <path
+                                                            d="M2 10L18 2L10 18L8 11L2 10Z"
+                                                            fill="currentColor"
+                                                            stroke="currentColor"
+                                                            strokeWidth="1.5"
+                                                            strokeLinejoin="round"
+                                                        />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="ticket-closed-notice">
+                                            This ticket is closed. No new messages can be added.
                                         </div>
                                     )}
-                                    <div className="message-input-wrapper">
-                                        <input
-                                            type="text"
-                                            value={messageContent}
-                                            onChange={(e) => setMessageContent(e.target.value)}
-                                            onKeyPress={(e) => e.key === 'Enter' && !isSendingMessage && handleSendMessage()}
-                                            placeholder="Type your message..."
-                                            disabled={isSendingMessage}
-                                            className="message-input-field"
-                                        />
-                                        <button
-                                            onClick={handleSendMessage}
-                                            disabled={!messageContent.trim() || isSendingMessage}
-                                            className="message-send-button"
-                                        >
-                                            {isSendingMessage ? (
-                                                <svg className="spinner-icon" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                </svg>
-                                            ) : (
-                                                <svg className="send-icon" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                                </svg>
-                                            )}
-                                        </button>
-                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            ) : null}
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+
+                {/* Floating Button */}
+                <button className="ticket-toggle-button" onClick={toggleWidget} aria-label="Toggle tickets">
+                    {isOpen ? (
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path
+                                d="M19 9L12 16L5 9"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                    ) : (
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path
+                                d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 6.10457 9.89543 7 11 7H13C14.1046 7 15 6.10457 15 5M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5M9 12H15M9 16H13"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                    )}
+                    {tickets.some((t) => getUnreadCount(t) > 0) && (
+                        <span className="notification-dot"></span>
+                    )}
+                </button>
+            </div>
         </>
     );
 };
+
+const STYLES = `
+    .ticket-widget-container {
+        position: fixed;
+        z-index: 9999;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    /* Theme Variables */
+    .ticket-widget-container[data-theme='light'] {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f9fafb;
+        --bg-hover: #f3f4f6;
+        --text-primary: #111827;
+        --text-secondary: #6b7280;
+        --border-color: #e5e7eb;
+        --accent-color: var(--custom-accent, #3b82f6);
+        --user-msg-bg: var(--custom-accent, #3b82f6);
+        --user-msg-text: #ffffff;
+        --admin-msg-bg: #e5e7eb;
+        --admin-msg-text: #111827;
+        --shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        --success-bg: #d1fae5;
+        --success-text: #065f46;
+        --error-bg: #fee2e2;
+        --error-text: #991b1b;
+    }
+
+    .ticket-widget-container[data-theme='dark'] {
+        --bg-primary: #1e1e1e;
+        --bg-secondary: #2d2d2d;
+        --bg-hover: #3a3a3a;
+        --text-primary: #eaeaea;
+        --text-secondary: #9ca3af;
+        --border-color: #404040;
+        --accent-color: var(--custom-accent, #3b82f6);
+        --user-msg-bg: var(--custom-accent, #3b82f6);
+        --user-msg-text: #ffffff;
+        --admin-msg-bg: #404040;
+        --admin-msg-text: #eaeaea;
+        --shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        --success-bg: #064e3b;
+        --success-text: #d1fae5;
+        --error-bg: #7f1d1d;
+        --error-text: #fecaca;
+    }
+
+    .ticket-widget-container[data-theme='material'] {
+        --bg-primary: #ffffff;
+        --bg-secondary: #fafafa;
+        --bg-hover: #f5f5f5;
+        --text-primary: #212121;
+        --text-secondary: #757575;
+        --border-color: #e0e0e0;
+        --accent-color: var(--custom-accent, #1976d2);
+        --user-msg-bg: var(--custom-accent, #1976d2);
+        --user-msg-text: #ffffff;
+        --admin-msg-bg: #eeeeee;
+        --admin-msg-text: #212121;
+        --shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        --success-bg: #c8e6c9;
+        --success-text: #1b5e20;
+        --error-bg: #ffcdd2;
+        --error-text: #b71c1c;
+    }
+
+    .ticket-widget-container[data-theme='nord'] {
+        --bg-primary: #2e3440;
+        --bg-secondary: #3b4252;
+        --bg-hover: #434c5e;
+        --text-primary: #eceff4;
+        --text-secondary: #d8dee9;
+        --border-color: #4c566a;
+        --accent-color: #88c0d0;
+        --user-msg-bg: #88c0d0;
+        --user-msg-text: #2e3440;
+        --admin-msg-bg: #434c5e;
+        --admin-msg-text: #eceff4;
+        --shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        --success-bg: #a3be8c;
+        --success-text: #2e3440;
+        --error-bg: #bf616a;
+        --error-text: #eceff4;
+    }
+
+    .ticket-widget-container[data-theme='fleety'] {
+        --bg-primary: #232627;
+        --bg-secondary: #2d3133;
+        --bg-hover: #363a3c;
+        --text-primary: #ffffff;
+        --text-secondary: #b8babb;
+        --border-color: #3d4245;
+        --accent-color: #f1be00;
+        --user-msg-bg: #f1be00;
+        --user-msg-text: #232627;
+        --admin-msg-bg: #454a4d;
+        --admin-msg-text: #ffffff;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        --success-bg: #4a5a3e;
+        --success-text: #a8d08d;
+        --error-bg: #5a3e3e;
+        --error-text: #f5a9a9;
+    }
+
+    /* Fleety theme: Black text on yellow backgrounds for better contrast */
+    .ticket-widget-container[data-theme='fleety'] .ticket-header {
+        color: #232627;
+    }
+
+    .ticket-widget-container[data-theme='fleety'] .close-button,
+    .ticket-widget-container[data-theme='fleety'] .back-button,
+    .ticket-widget-container[data-theme='fleety'] .create-ticket-button,
+    .ticket-widget-container[data-theme='fleety'] .submit-button,
+    .ticket-widget-container[data-theme='fleety'] .send-button,
+    .ticket-widget-container[data-theme='fleety'] .ticket-toggle-button {
+        color: #232627;
+    }
+
+    /* Ticket Window */
+    .ticket-window {
+        position: absolute;
+        bottom: 80px;
+        right: 0;
+        width: 420px;
+        max-width: calc(100vw - 40px);
+        height: 650px;
+        max-height: calc(100vh - 120px);
+        background: var(--bg-primary);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: slideUp 0.3s ease-out;
+    }
+
+    /* Position based on dock */
+    .ticket-widget-container[data-dock='bottom-right'] .ticket-window {
+        bottom: 80px;
+        right: 0;
+        left: auto;
+        top: auto;
+    }
+
+    .ticket-widget-container[data-dock='bottom-left'] .ticket-window {
+        bottom: 80px;
+        left: 0;
+        right: auto;
+        top: auto;
+    }
+
+    .ticket-widget-container[data-dock='top-right'] .ticket-window {
+        top: 80px;
+        right: 0;
+        bottom: auto;
+        left: auto;
+    }
+
+    .ticket-widget-container[data-dock='top-left'] .ticket-window {
+        top: 80px;
+        left: 0;
+        bottom: auto;
+        right: auto;
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Header */
+    .ticket-header {
+        background: var(--accent-color);
+        color: #ffffff;
+        padding: 16px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        flex-shrink: 0;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .header-icon {
+        font-size: 24px;
+        flex-shrink: 0;
+    }
+
+    .back-button {
+        background: transparent;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+
+    .back-button:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .header-text {
+        flex: 1;
+        min-width: 0;
+        text-align: left;
+    }
+
+    .header-title {
+        font-weight: 600;
+        font-size: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-align: left;
+    }
+
+    .header-subtitle {
+        font-size: 13px;
+        opacity: 0.9;
+        margin-top: 2px;
+        text-align: left;
+    }
+
+    .close-button {
+        background: transparent;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+
+    .close-button:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Content */
+    .ticket-content {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Tickets List */
+    .tickets-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: var(--bg-secondary);
+    }
+
+    .empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 20px;
+        text-align: center;
+    }
+
+    .empty-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.5;
+    }
+
+    .empty-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 8px;
+    }
+
+    .empty-text {
+        font-size: 14px;
+        color: var(--text-secondary);
+        max-width: 300px;
+    }
+
+    .ticket-item {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .ticket-item:hover {
+        background: var(--bg-hover);
+        border-color: var(--accent-color);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .ticket-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .ticket-item-title {
+        font-weight: 600;
+        font-size: 15px;
+        color: var(--text-primary);
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        flex-shrink: 0;
+    }
+
+    /* Status badge in header needs margin */
+    .ticket-header .status-badge {
+        margin-left: 12px;
+    }
+
+    .status-badge.status-open {
+        background: #10b981;
+        color: white;
+    }
+
+    .status-badge.status-in_progress {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .status-badge.status-resolved {
+        background: #8b5cf6;
+        color: white;
+    }
+
+    .status-badge.status-closed {
+        background: var(--text-secondary);
+        color: white;
+    }
+
+    .ticket-item-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+
+    .ticket-item-slug {
+        font-weight: 500;
+    }
+
+    .ticket-item-date {
+        flex: 1;
+    }
+
+    .unread-badge {
+        background: #ef4444;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .ticket-item-description {
+        font-size: 13px;
+        color: var(--text-secondary);
+        line-height: 1.4;
+    }
+
+    /* Action Bar */
+    .action-bar {
+        padding: 16px;
+        background: var(--bg-primary);
+        border-top: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .create-ticket-button {
+        width: 100%;
+        background: var(--accent-color);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+            opacity 0.2s,
+            transform 0.1s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .create-ticket-button:hover {
+        opacity: 0.9;
+        transform: scale(1.02);
+    }
+
+    .create-ticket-button:active {
+        transform: scale(0.98);
+    }
+
+    /* Create Form */
+    .create-form {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        background: var(--bg-secondary);
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group label {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .form-input,
+    .form-textarea {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: inherit;
+        color: var(--text-primary);
+        transition: border-color 0.2s;
+    }
+
+    .form-input:focus,
+    .form-textarea:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .form-input::placeholder,
+    .form-textarea::placeholder {
+        color: var(--text-secondary);
+    }
+
+    .form-input:disabled,
+    .form-textarea:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .form-textarea {
+        resize: vertical;
+        min-height: 120px;
+    }
+
+    .submit-button {
+        background: var(--accent-color);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+            opacity 0.2s,
+            transform 0.1s;
+        margin-top: auto;
+    }
+
+    .submit-button:hover:not(:disabled) {
+        opacity: 0.9;
+        transform: scale(1.02);
+    }
+
+    .submit-button:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+
+    .submit-button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    /* Ticket View */
+    .ticket-view {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .ticket-details {
+        padding: 16px 20px;
+        background: var(--bg-primary);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .ticket-title-section {
+        margin-bottom: 12px;
+    }
+
+    .ticket-title-section h3 {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 6px 0;
+    }
+
+    .ticket-meta {
+        font-size: 12px;
+        color: var(--text-secondary);
+    }
+
+    .ticket-description-section {
+        padding-top: 12px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .description-content {
+        font-size: 14px;
+        color: var(--text-primary);
+        line-height: 1.5;
+    }
+
+    /* Messages Section */
+    .messages-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--bg-secondary);
+    }
+
+    .messages-header {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-primary);
+    }
+
+    .messages-count {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .messages-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .message {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 80%;
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .message-content {
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.5;
+        word-wrap: break-word;
+    }
+
+    .message-content * {
+        margin: 0;
+        padding: 0;
+        font-size: 14px;
+        line-height: 1.5;
+        font-weight: normal;
+    }
+
+    .message-content ul,
+    .message-content ol {
+        padding-left: 20px;
+    }
+
+    .message-content code {
+        font-size: 13px;
+    }
+
+    .message-time {
+        font-size: 11px;
+        color: var(--text-secondary);
+        padding: 0 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .message-author {
+        font-weight: 600;
+    }
+
+    /* Message Input */
+    .message-input-container {
+        padding: 16px 20px;
+        background: var(--bg-primary);
+        border-top: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .error-message-inline {
+        background: var(--error-bg);
+        color: var(--error-text);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        margin-bottom: 12px;
+    }
+
+    .input-wrapper {
+        display: flex;
+        gap: 12px;
+        align-items: flex-end;
+    }
+
+    .message-input {
+        flex: 1;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: inherit;
+        color: var(--text-primary);
+        resize: none;
+        max-height: 100px;
+        transition: border-color 0.2s;
+    }
+
+    .message-input:focus {
+        outline: none;
+        border-color: var(--accent-color);
+    }
+
+    .message-input::placeholder {
+        color: var(--text-secondary);
+    }
+
+    .message-input:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .send-button {
+        background: var(--accent-color);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition:
+            opacity 0.2s,
+            transform 0.1s;
+        flex-shrink: 0;
+    }
+
+    .send-button:hover:not(:disabled) {
+        opacity: 0.9;
+        transform: scale(1.05);
+    }
+
+    .send-button:active:not(:disabled) {
+        transform: scale(0.95);
+    }
+
+    .send-button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .ticket-closed-notice {
+        padding: 16px;
+        text-align: center;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        font-size: 13px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    /* Messages */
+    .success-message {
+        background: var(--success-bg);
+        color: var(--success-text);
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        text-align: center;
+        font-weight: 500;
+    }
+
+    .error-message {
+        background: var(--error-bg);
+        color: var(--error-text);
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        text-align: center;
+        font-weight: 500;
+    }
+
+    /* Rate Limit Notices */
+    .rate-limit-notice {
+        background: linear-gradient(135deg, #fff3cd 0%, #fff8e1 100%);
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .ticket-widget-container[data-theme='dark'] .rate-limit-notice,
+    .ticket-widget-container[data-theme='nord'] .rate-limit-notice,
+    .ticket-widget-container[data-theme='fleety'] .rate-limit-notice {
+        background: linear-gradient(135deg, #4a3f1a 0%, #5a4f2a 100%);
+        border-color: #9e7e00;
+        color: #ffd54f;
+    }
+
+    .rate-limit-icon {
+        font-size: 24px;
+        flex-shrink: 0;
+    }
+
+    .rate-limit-text {
+        flex: 1;
+    }
+
+    .rate-limit-text strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 14px;
+    }
+
+    .rate-limit-text p {
+        margin: 4px 0;
+        font-size: 13px;
+        opacity: 0.9;
+    }
+
+    .rate-limit-cooldown {
+        font-weight: 600;
+        margin-top: 8px !important;
+    }
+
+    .rate-limit-notice-inline {
+        background: #fff8e1;
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .ticket-widget-container[data-theme='dark'] .rate-limit-notice-inline,
+    .ticket-widget-container[data-theme='nord'] .rate-limit-notice-inline,
+    .ticket-widget-container[data-theme='fleety'] .rate-limit-notice-inline {
+        background: #4a3f1a;
+        border-color: #9e7e00;
+        color: #ffd54f;
+    }
+
+    .rate-limit-icon-small {
+        font-size: 16px;
+    }
+
+    .rate-limit-cooldown-small {
+        font-weight: 600;
+        margin-left: auto;
+    }
+
+    /* Toggle Button */
+    .ticket-toggle-button {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: var(--accent-color);
+        color: #ffffff;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        transition:
+            transform 0.2s,
+            box-shadow 0.2s;
+        position: relative;
+    }
+
+    .ticket-toggle-button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    .ticket-toggle-button:active {
+        transform: scale(0.95);
+    }
+
+    .notification-dot {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 12px;
+        height: 12px;
+        background: #ef4444;
+        border: 2px solid white;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0%,
+        100% {
+            opacity: 1;
+            transform: scale(1);
+        }
+        50% {
+            opacity: 0.7;
+            transform: scale(1.1);
+        }
+    }
+
+    /* Scrollbar Styling */
+    .tickets-list::-webkit-scrollbar,
+    .messages-container::-webkit-scrollbar,
+    .create-form::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .tickets-list::-webkit-scrollbar-track,
+    .messages-container::-webkit-scrollbar-track,
+    .create-form::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .tickets-list::-webkit-scrollbar-thumb,
+    .messages-container::-webkit-scrollbar-thumb,
+    .create-form::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 3px;
+    }
+
+    .tickets-list::-webkit-scrollbar-thumb:hover,
+    .messages-container::-webkit-scrollbar-thumb:hover,
+    .create-form::-webkit-scrollbar-thumb:hover {
+        background: var(--text-secondary);
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 480px) {
+        .ticket-window {
+            width: calc(100vw - 40px);
+            height: calc(100vh - 140px);
+        }
+
+        .ticket-toggle-button {
+            width: 56px;
+            height: 56px;
+        }
+    }
+`;
 
 export default SupportTicketWidget;
