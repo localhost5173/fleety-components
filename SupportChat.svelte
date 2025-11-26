@@ -18,9 +18,9 @@
 	type DockPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
 	type Theme = 'fleety' | 'material' | 'nord' | 'light' | 'dark' | 'system';
 
-    let activeTheme = $state(theme);
-    
-    // Theme detection for system theme
+	let activeTheme = $state(theme);
+
+	// Theme detection for system theme
 	$effect(() => {
 		if (theme === 'system') {
 			const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -38,8 +38,8 @@
 	});
 
 	// Fleety API Configuration
-	const API_URL = "https://api.fleety.dev/v1";
-	
+	const API_URL = 'https://api.fleety.dev/v1';
+
 	// State for anonymous session
 	let anonToken = $state('');
 	let tokenExpiresAt: Date | null = $state(null);
@@ -51,7 +51,7 @@
 		content: string;
 	};
 	let conversationHistory: ConversationMessage[] = $state([]);
-	
+
 	let isOpen = $state(false);
 	let messages: Array<{ id: string; text: string; isUser: boolean; timestamp: Date }> = $state([]);
 	let currentMessage = $state('');
@@ -63,29 +63,37 @@
 
 	// --- Start of inlined MessageContent logic ---
 
-    // Configure marked options
-    marked.setOptions({
-        breaks: true, // Convert \n to <br>
-        gfm: true, // GitHub Flavored Markdown
-    });
+	// Configure marked options
+	marked.setOptions({
+		breaks: true, // Convert \n to <br>
+		gfm: true // GitHub Flavored Markdown
+	});
 
-    // Custom renderer for better control
-    const renderer = new marked.Renderer();
-    
-    // Override link rendering to add target="_blank" for external links
-    renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
-        const titleAttr = title ? ` title="${title}"` : '';
-        const isExternal = href?.startsWith('http') || href?.startsWith('https');
-        const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
-        return `<a href="${href}"${titleAttr}${target} class="message-link">${text}</a>`;
-    };
+	// Custom renderer for better control
+	const renderer = new marked.Renderer();
 
-    // Override code rendering to add syntax highlighting classes and copy button
-    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-        const language = lang || 'text';
-        const codeId = `code-${Math.random().toString(36).substr(2, 9)}`;
-        const escapedText = escapeHtml(text);
-        return `<div class="code-block-wrapper">
+	// Override link rendering to add target="_blank" for external links
+	renderer.link = ({
+		href,
+		title,
+		text
+	}: {
+		href: string;
+		title?: string | null;
+		text: string;
+	}) => {
+		const titleAttr = title ? ` title="${title}"` : '';
+		const isExternal = href?.startsWith('http') || href?.startsWith('https');
+		const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
+		return `<a href="${href}"${titleAttr}${target} class="message-link">${text}</a>`;
+	};
+
+	// Override code rendering to add syntax highlighting classes and copy button
+	renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+		const language = lang || 'text';
+		const codeId = `code-${Math.random().toString(36).substr(2, 9)}`;
+		const escapedText = escapeHtml(text);
+		return `<div class="code-block-wrapper">
             <div class="code-block-header">
                 <span class="code-language">${language}</span>
                 <button class="copy-code-btn" data-code-id="${codeId}" onclick="copyCode('${codeId}')">
@@ -98,13 +106,13 @@
             </div>
             <pre class="message-code-block" id="${codeId}"><code class="language-${language}">${escapedText}</code></pre>
         </div>`;
-    };
+	};
 
-    // Override inline code
-    renderer.codespan = ({ text }: { text: string }) => {
-        const escapedText = escapeHtml(text);
-        const codeId = `inline-code-${Math.random().toString(36).substr(2, 9)}`;
-        return `<span class="inline-code-wrapper">
+	// Override inline code
+	renderer.codespan = ({ text }: { text: string }) => {
+		const escapedText = escapeHtml(text);
+		const codeId = `inline-code-${Math.random().toString(36).substr(2, 9)}`;
+		return `<span class="inline-code-wrapper">
             <code class="message-inline-code" id="${codeId}">${escapedText}</code>
             <button class="copy-inline-btn" data-inline-id="${codeId}" onclick="copyInlineCode('${codeId}')" title="Copy code">
                 <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -112,13 +120,13 @@
                 </svg>
             </button>
         </span>`;
-    };
+	};
 
-    // Override blockquote to add copy button
-    renderer.blockquote = ({ tokens }: { tokens: any[] }) => {
-        const text = tokens.map((token: any) => token.raw || '').join('');
-        const quoteId = `quote-${Math.random().toString(36).substr(2, 9)}`;
-        return `<div class="blockquote-wrapper">
+	// Override blockquote to add copy button
+	renderer.blockquote = ({ tokens }: { tokens: any[] }) => {
+		const text = tokens.map((token: any) => token.raw || '').join('');
+		const quoteId = `quote-${Math.random().toString(36).substr(2, 9)}`;
+		return `<div class="blockquote-wrapper">
             <blockquote class="message-blockquote" id="${quoteId}">
                 ${marked.parse(text)}
                 <button class="copy-quote-btn" data-quote-id="${quoteId}" onclick="copyQuote('${quoteId}')">
@@ -128,38 +136,38 @@
                 </button>
             </blockquote>
         </div>`;
-    };
+	};
 
-    // Escape HTML to prevent XSS
-    function escapeHtml(text: string): string {
-        const map: Record<string, string> = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return text.replace(/[&<>"']/g, (m) => map[m]);
-    }
+	// Escape HTML to prevent XSS
+	function escapeHtml(text: string): string {
+		const map: Record<string, string> = {
+			'&': '&amp;',
+			'<': '&lt;',
+			'>': '&gt;',
+			'"': '&quot;',
+			"'": '&#039;'
+		};
+		return text.replace(/[&<>"']/g, (m) => map[m]);
+	}
 
-    // Parse markdown content
-    function parseMarkdown(text: string): string {
-        try {
-            return marked(text, { renderer }) as string;
-        } catch (error) {
-            console.error('Error parsing markdown:', error);
-            return escapeHtml(text);
-        }
-    }
+	// Parse markdown content
+	function parseMarkdown(text: string): string {
+		try {
+			return marked(text, { renderer }) as string;
+		} catch (error) {
+			console.error('Error parsing markdown:', error);
+			return escapeHtml(text);
+		}
+	}
 
 	function formatMessageContent(content: string, isUser: boolean): string {
 		if (isUser) {
-            // For user messages, just escape HTML and preserve line breaks
-            return escapeHtml(content).replace(/\n/g, '<br>');
-        } else {
-            // For AI messages, parse markdown
-            return parseMarkdown(content);
-        }
+			// For user messages, just escape HTML and preserve line breaks
+			return escapeHtml(content).replace(/\n/g, '<br>');
+		} else {
+			// For AI messages, parse markdown
+			return parseMarkdown(content);
+		}
 	}
 
 	// --- End of inlined MessageContent logic ---
@@ -173,11 +181,11 @@
 			console.log('🔄 Initializing Fleety chat session...');
 			console.log('Project ID:', projectId);
 			console.log('Origin:', window.location.origin);
-			
+
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json'
 			};
-			
+
 			const response = await fetch(`${API_URL}/init-session`, {
 				method: 'POST',
 				headers,
@@ -201,11 +209,13 @@
 			console.log('Project ID:', result.project_id);
 
 			// Auto-renew token before expiration (4 minutes, as tokens last 5 min)
-			setTimeout(() => {
-				console.log('🔄 Token expiring soon, renewing...');
-				initializeSession();
-			}, 4 * 60 * 1000);
-
+			setTimeout(
+				() => {
+					console.log('🔄 Token expiring soon, renewing...');
+					initializeSession();
+				},
+				4 * 60 * 1000
+			);
 		} catch (err) {
 			sessionError = err instanceof Error ? err.message : 'Unknown error';
 			console.error('❌ Session initialization error:', err);
@@ -216,14 +226,14 @@
 		isOpen = !isOpen;
 		if (isOpen && messages.length === 0) {
 			// Add welcome message
-			addAIMessage("👋 Welcome to Fleety support! I'm here to help you. Ask me anything!"); 
-			
+			addAIMessage("👋 Welcome to Fleety support! I'm here to help you. Ask me anything!");
+
 			// Initialize session if not already done (works for both authenticated and unauthenticated users)
 			if (!anonToken) {
 				initializeSession();
 			}
 		}
-		
+
 		// Auto-focus input when chat opens
 		if (isOpen) {
 			setTimeout(() => {
@@ -240,7 +250,7 @@
 			timestamp: new Date()
 		};
 		messages = [...messages, message];
-		
+
 		// Scroll to bottom
 		setTimeout(() => {
 			if (chatContainer) {
@@ -264,13 +274,13 @@
 
 		const userMessage = currentMessage.trim();
 		addMessage(userMessage, true);
-		
+
 		// Add user message to conversation history
 		conversationHistory.push({
 			role: 'user',
 			content: userMessage
 		});
-		
+
 		currentMessage = '';
 
 		// Check if we have a session token
@@ -278,10 +288,10 @@
 			console.log('⚠️ No session token, initializing...');
 			// Try to initialize session
 			await initializeSession();
-			
+
 			if (!anonToken) {
 				// If still no token, show error
-				addAIMessage("⚠️ Unable to connect to chat service. Please try again later.");
+				addAIMessage('⚠️ Unable to connect to chat service. Please try again later.');
 				return;
 			}
 		}
@@ -293,14 +303,14 @@
 			console.log('📤 Sending chat message with history...');
 			console.log('Conversation history length:', conversationHistory.length);
 			console.log('Using anon token:', anonToken.substring(0, 20) + '...');
-			
+
 			const response = await fetch(`${API_URL}/chat/tools`, {
 				method: 'POST',
 				headers: {
-					'Authorization': `Bearer ${anonToken}`,
+					Authorization: `Bearer ${anonToken}`,
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({ 
+				body: JSON.stringify({
 					messages: conversationHistory,
 					enable_tool_calling: true
 				})
@@ -312,35 +322,37 @@
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({}));
 				console.error('❌ Chat request failed:', response.status, errorData);
-				
+
 				// Handle rate limiting specifically
 				if (response.status === 429) {
 					const retryAfter = response.headers.get('Retry-After');
-					const retryMessage = retryAfter 
+					const retryMessage = retryAfter
 						? `Please wait ${retryAfter} seconds before trying again.`
 						: 'Please wait a moment before trying again.';
-					throw new Error(`rate_limit:${errorData.message || 'You\'re sending requests too fast.'} ${retryMessage}`);
+					throw new Error(
+						`rate_limit:${errorData.message || "You're sending requests too fast."} ${retryMessage}`
+					);
 				}
-				
+
 				throw new Error(errorData.error || `HTTP ${response.status}`);
 			}
 
 			// Check if this is a tool call response (non-streaming)
 			const contentType = response.headers.get('content-type');
 			console.log('📋 Content-Type:', contentType);
-			
+
 			if (contentType?.includes('application/json')) {
 				// This is a tool call response
 				const toolResponse = await response.json();
 				console.log('📦 Tool response:', toolResponse);
 				console.log('📦 Response type:', toolResponse.type);
 				console.log('📦 Response message:', toolResponse.message);
-				
+
 				if (toolResponse.type === 'tool_call') {
 					// AI created a ticket
 					console.log('🎫 Ticket created:', toolResponse.ticket_slug);
 					addAIMessage(toolResponse.message);
-					
+
 					// Dispatch custom event to notify SupportTicketWidget
 					const event = new CustomEvent('ticket-created', {
 						detail: { ticketSlug: toolResponse.ticket_slug },
@@ -349,7 +361,7 @@
 					});
 					window.dispatchEvent(event);
 					console.log('📢 Dispatched ticket-created event:', toolResponse.ticket_slug);
-					
+
 					isTyping = false;
 					return;
 				} else if (toolResponse.type === 'message') {
@@ -360,7 +372,7 @@
 					isTyping = false;
 					return;
 				}
-				
+
 				console.log('⚠️ Unknown response type:', toolResponse.type);
 			}
 
@@ -383,9 +395,11 @@
 			while (true) {
 				console.log(`⏳ Waiting for chunk ${chunkCount + 1}...`);
 				const { done, value } = await reader.read();
-				
-				console.log(`📦 Chunk ${chunkCount + 1} - done: ${done}, value length: ${value?.length || 0}`);
-				
+
+				console.log(
+					`📦 Chunk ${chunkCount + 1} - done: ${done}, value length: ${value?.length || 0}`
+				);
+
 				if (done) {
 					console.log(`✅ Stream complete. Received ${chunkCount} chunks.`);
 					break;
@@ -393,7 +407,7 @@
 
 				const chunk = decoder.decode(value, { stream: true });
 				chunkCount++;
-				
+
 				console.log(`Chunk ${chunkCount} raw:`, chunk);
 
 				// Check if this is a complete JSON response (not SSE format)
@@ -401,7 +415,7 @@
 					try {
 						const jsonResponse = JSON.parse(chunk);
 						console.log('📦 Parsed JSON response:', jsonResponse);
-						
+
 						if (jsonResponse.type === 'message' && jsonResponse.message) {
 							addAIMessage(jsonResponse.message);
 							console.log('✅ Added message from JSON response');
@@ -430,7 +444,7 @@
 				for (const line of lines) {
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						
+
 						if (data === '[DONE]') {
 							console.log('✅ Received [DONE] signal');
 							isTyping = false;
@@ -440,12 +454,12 @@
 						try {
 							const parsed = JSON.parse(data);
 							const content = parsed.choices[0]?.delta?.content || '';
-							
+
 							if (content) {
 								aiResponse += content;
-								
+
 								// Update or create AI message
-								const existingMessageIndex = messages.findIndex(m => m.id === messageId);
+								const existingMessageIndex = messages.findIndex((m) => m.id === messageId);
 								if (existingMessageIndex !== -1) {
 									// Update existing message
 									messages[existingMessageIndex] = {
@@ -463,7 +477,7 @@
 									};
 									messages = [...messages, message];
 								}
-								
+
 								// Scroll to bottom
 								setTimeout(() => {
 									if (chatContainer) {
@@ -477,7 +491,7 @@
 					}
 				}
 			}
-			
+
 			// After stream completes, add the complete AI response to conversation history
 			if (aiResponse) {
 				conversationHistory.push({
@@ -486,7 +500,6 @@
 				});
 				console.log('✅ Added AI response to conversation history');
 			}
-			
 		} catch (err) {
 			const error = err instanceof Error ? err.message : 'Failed to send message';
 			console.error('❌ Chat error:', err);
@@ -501,11 +514,11 @@
 				console.log('🔄 Token expired, reinitializing session...');
 				anonToken = '';
 				await initializeSession();
-				
+
 				if (anonToken) {
-					addAIMessage("Session refreshed. Please try sending your message again.");
+					addAIMessage('Session refreshed. Please try sending your message again.');
 				} else {
-					addAIMessage("⚠️ Session expired. Please refresh the page and try again.");
+					addAIMessage('⚠️ Session expired. Please refresh the page and try again.');
 				}
 			} else {
 				addAIMessage(`⚠️ Sorry, I encountered an error: ${error}. Please try again.`);
@@ -542,102 +555,116 @@
 		// Close chat when clicking outside
 		function handleClickOutside(event: MouseEvent) {
 			const target = event.target as Element;
-			if (isOpen && target && !target.closest('.chat-container') && !target.closest('.chat-toggle-button')) {
+			if (
+				isOpen &&
+				target &&
+				!target.closest('.chat-container') &&
+				!target.closest('.chat-toggle-button')
+			) {
 				isOpen = false;
 			}
 		}
 
 		document.addEventListener('keydown', handleKeyDown);
 		document.addEventListener('click', handleClickOutside);
-		
-        // --- Start of inlined onMount logic from MessageContent ---
-        // Define the copy function globally so it's accessible from the HTML
-        (window as any).copyCode = (codeId: string) => {
-            const codeBlock = document.getElementById(codeId);
-            if (!codeBlock) return;
 
-            const code = codeBlock.textContent || '';
-            
-            // Copy to clipboard
-            navigator.clipboard.writeText(code).then(() => {
-                // Find the button that was clicked
-                const button = document.querySelector(`[data-code-id="${codeId}"]`);
-                if (!button) return;
+		// --- Start of inlined onMount logic from MessageContent ---
+		// Define the copy function globally so it's accessible from the HTML
+		(window as any).copyCode = (codeId: string) => {
+			const codeBlock = document.getElementById(codeId);
+			if (!codeBlock) return;
 
-                const copyText = button.querySelector('.copy-text') as HTMLElement;
-                const copiedText = button.querySelector('.copied-text') as HTMLElement;
+			const code = codeBlock.textContent || '';
 
-                // Show "Copied!" feedback
-                if (copyText) copyText.style.display = 'none';
-                if (copiedText) copiedText.style.display = 'inline';
+			// Copy to clipboard
+			navigator.clipboard
+				.writeText(code)
+				.then(() => {
+					// Find the button that was clicked
+					const button = document.querySelector(`[data-code-id="${codeId}"]`);
+					if (!button) return;
 
-                // Reset after 2 seconds
-                setTimeout(() => {
-                    if (copyText) copyText.style.display = 'inline';
-                    if (copiedText) copiedText.style.display = 'none';
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy code:', err);
-            });
-        };
+					const copyText = button.querySelector('.copy-text') as HTMLElement;
+					const copiedText = button.querySelector('.copied-text') as HTMLElement;
 
-        // Define the copy quote function
-        (window as any).copyQuote = (quoteId: string) => {
-            const quoteBlock = document.getElementById(quoteId);
-            if (!quoteBlock) return;
+					// Show "Copied!" feedback
+					if (copyText) copyText.style.display = 'none';
+					if (copiedText) copiedText.style.display = 'inline';
 
-            // Get the text content without the copy button
-            const button = quoteBlock.querySelector('.copy-quote-btn');
-            const clonedQuote = quoteBlock.cloneNode(true) as HTMLElement;
-            const clonedButton = clonedQuote.querySelector('.copy-quote-btn');
-            if (clonedButton) clonedButton.remove();
+					// Reset after 2 seconds
+					setTimeout(() => {
+						if (copyText) copyText.style.display = 'inline';
+						if (copiedText) copiedText.style.display = 'none';
+					}, 2000);
+				})
+				.catch((err) => {
+					console.error('Failed to copy code:', err);
+				});
+		};
 
-            const quoteText = clonedQuote.textContent || '';
-            
-            // Copy to clipboard
-            navigator.clipboard.writeText(quoteText.trim()).then(() => {
-                if (!button) return;
+		// Define the copy quote function
+		(window as any).copyQuote = (quoteId: string) => {
+			const quoteBlock = document.getElementById(quoteId);
+			if (!quoteBlock) return;
 
-                // Visual feedback - change icon temporarily
-                const icon = button.querySelector('.copy-icon') as HTMLElement;
-                if (icon) {
-                    icon.style.opacity = '1';
-                    setTimeout(() => {
-                        icon.style.opacity = '0.6';
-                    }, 1000);
-                }
-            }).catch(err => {
-                console.error('Failed to copy quote:', err);
-            });
-        };
+			// Get the text content without the copy button
+			const button = quoteBlock.querySelector('.copy-quote-btn');
+			const clonedQuote = quoteBlock.cloneNode(true) as HTMLElement;
+			const clonedButton = clonedQuote.querySelector('.copy-quote-btn');
+			if (clonedButton) clonedButton.remove();
 
-        // Define the copy inline code function
-        (window as any).copyInlineCode = (codeId: string) => {
-            const codeElement = document.getElementById(codeId);
-            if (!codeElement) return;
+			const quoteText = clonedQuote.textContent || '';
 
-            const code = codeElement.textContent || '';
-            
-            // Copy to clipboard
-            navigator.clipboard.writeText(code).then(() => {
-                const button = document.querySelector(`[data-inline-id="${codeId}"]`);
-                if (!button) return;
+			// Copy to clipboard
+			navigator.clipboard
+				.writeText(quoteText.trim())
+				.then(() => {
+					if (!button) return;
 
-                // Visual feedback
-                const icon = button.querySelector('.copy-icon') as HTMLElement;
-                if (icon) {
-                    icon.style.opacity = '1';
-                    icon.style.transform = 'scale(1.2)';
-                    setTimeout(() => {
-                        icon.style.opacity = '0.7';
-                        icon.style.transform = 'scale(1)';
-                    }, 800);
-                }
-            }).catch(err => {
-                console.error('Failed to copy inline code:', err);
-            });
-        };
-        // --- End of inlined onMount logic ---
+					// Visual feedback - change icon temporarily
+					const icon = button.querySelector('.copy-icon') as HTMLElement;
+					if (icon) {
+						icon.style.opacity = '1';
+						setTimeout(() => {
+							icon.style.opacity = '0.6';
+						}, 1000);
+					}
+				})
+				.catch((err) => {
+					console.error('Failed to copy quote:', err);
+				});
+		};
+
+		// Define the copy inline code function
+		(window as any).copyInlineCode = (codeId: string) => {
+			const codeElement = document.getElementById(codeId);
+			if (!codeElement) return;
+
+			const code = codeElement.textContent || '';
+
+			// Copy to clipboard
+			navigator.clipboard
+				.writeText(code)
+				.then(() => {
+					const button = document.querySelector(`[data-inline-id="${codeId}"]`);
+					if (!button) return;
+
+					// Visual feedback
+					const icon = button.querySelector('.copy-icon') as HTMLElement;
+					if (icon) {
+						icon.style.opacity = '1';
+						icon.style.transform = 'scale(1.2)';
+						setTimeout(() => {
+							icon.style.opacity = '0.7';
+							icon.style.transform = 'scale(1)';
+						}, 800);
+					}
+				})
+				.catch((err) => {
+					console.error('Failed to copy inline code:', err);
+				});
+		};
+		// --- End of inlined onMount logic ---
 
 		return () => {
 			document.removeEventListener('keydown', handleKeyDown);
@@ -667,8 +694,19 @@
 			</div>
 			<div class="header-right">
 				<button onclick={toggleChat} class="minimize-button" aria-label="Minimize chat">
-					<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="icon-sm"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M19 9l-7 7-7-7"
+						/>
 					</svg>
 				</button>
 			</div>
@@ -718,8 +756,14 @@
 					class="send-button"
 					aria-label="Send message"
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+					<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+						<path
+							d="M2 10L18 2L10 18L8 11L2 10Z"
+							fill="currentColor"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linejoin="round"
+						/>
 					</svg>
 				</button>
 			</div>
@@ -730,16 +774,41 @@
 <!-- Chat Toggle Button - Always visible, positioned below the chat window -->
 <div class="chat-toggle-button" data-theme={activeTheme} data-dock={dockPosition}>
 	<button
-		onclick={(e) => { e.stopPropagation(); toggleChat(); }}
+		onclick={(e) => {
+			e.stopPropagation();
+			toggleChat();
+		}}
 		class="toggle-button"
-		aria-label={isOpen ? "Close support chat" : "Open support chat"}
+		aria-label={isOpen ? 'Close support chat' : 'Open support chat'}
 	>
 		<div class="icon-container" class:open={isOpen}>
-			<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-default" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				class="icon icon-default"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke="currentColor"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+				/>
 			</svg>
-			<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-close" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				class="icon icon-close"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke="currentColor"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					stroke-width="2"
+					d="M6 18L18 6M6 6l12 12"
+				/>
 			</svg>
 		</div>
 	</button>
@@ -747,11 +816,14 @@
 
 <style>
 	/* Theme Variables - Copied and adapted from SupportTicketWidget */
-	.chat-container, .chat-toggle-button {
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	.chat-container,
+	.chat-toggle-button {
+		font-family:
+			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	}
 
-	.chat-container[data-theme='light'], .chat-toggle-button[data-theme='light'] {
+	.chat-container[data-theme='light'],
+	.chat-toggle-button[data-theme='light'] {
 		--bg-primary: #ffffff;
 		--bg-secondary: #f9fafb;
 		--bg-hover: #f3f4f6;
@@ -767,7 +839,8 @@
 		--shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 	}
 
-	.chat-container[data-theme='dark'], .chat-toggle-button[data-theme='dark'] {
+	.chat-container[data-theme='dark'],
+	.chat-toggle-button[data-theme='dark'] {
 		--bg-primary: #1e1e1e;
 		--bg-secondary: #2d2d2d;
 		--bg-hover: #3a3a3a;
@@ -783,7 +856,8 @@
 		--shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
 	}
 
-	.chat-container[data-theme='material'], .chat-toggle-button[data-theme='material'] {
+	.chat-container[data-theme='material'],
+	.chat-toggle-button[data-theme='material'] {
 		--bg-primary: #ffffff;
 		--bg-secondary: #fafafa;
 		--bg-hover: #f5f5f5;
@@ -799,7 +873,8 @@
 		--shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
 	}
 
-	.chat-container[data-theme='nord'], .chat-toggle-button[data-theme='nord'] {
+	.chat-container[data-theme='nord'],
+	.chat-toggle-button[data-theme='nord'] {
 		--bg-primary: #2e3440;
 		--bg-secondary: #3b4252;
 		--bg-hover: #434c5e;
@@ -815,7 +890,8 @@
 		--shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
 	}
 
-	.chat-container[data-theme='fleety'], .chat-toggle-button[data-theme='fleety'] {
+	.chat-container[data-theme='fleety'],
+	.chat-toggle-button[data-theme='fleety'] {
 		--bg-primary: #232627;
 		--bg-secondary: #2d3133;
 		--bg-hover: #363a3c;
@@ -830,9 +906,10 @@
 		--ai-msg-border: #3d4245;
 		--shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
 	}
-    
-    /* Midnight theme (kept from original but adapted) */
-    .chat-container[data-theme='midnight'], .chat-toggle-button[data-theme='midnight'] {
+
+	/* Midnight theme (kept from original but adapted) */
+	.chat-container[data-theme='midnight'],
+	.chat-toggle-button[data-theme='midnight'] {
 		--bg-primary: #0f172a;
 		--bg-secondary: #1e293b;
 		--bg-hover: #334155;
@@ -888,17 +965,17 @@
 		background: var(--accent-color);
 		color: white;
 	}
-    
-    .chat-toggle-button[data-theme='fleety'] .toggle-button {
-        color: #232627;
-    }
+
+	.chat-toggle-button[data-theme='fleety'] .toggle-button {
+		color: #232627;
+	}
 
 	.toggle-button:hover {
 		transform: scale(1.05);
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+		box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 	}
-    
-    .toggle-button:active {
+
+	.toggle-button:active {
 		transform: scale(0.95);
 	}
 
@@ -914,7 +991,9 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		transition: opacity 0.3s ease, transform 0.3s ease;
+		transition:
+			opacity 0.3s ease,
+			transform 0.3s ease;
 	}
 
 	.icon-default {
@@ -945,12 +1024,12 @@
 		flex-direction: column;
 		border-radius: 12px;
 		box-shadow: var(--shadow);
-        background: var(--bg-primary);
-        border: 1px solid var(--border-color);
-        overflow: hidden;
-        
-        /* Fixed size matching SupportTicketWidget */
-        width: 420px;
+		background: var(--bg-primary);
+		border: 1px solid var(--border-color);
+		overflow: hidden;
+
+		/* Fixed size matching SupportTicketWidget */
+		width: 420px;
 		max-width: calc(100vw - 40px);
 		height: 650px;
 		max-height: calc(100vh - 120px);
@@ -985,13 +1064,13 @@
 		padding: 16px 20px;
 		background: var(--accent-color);
 		color: white;
-        border-radius: 12px 12px 0 0;
-        flex-shrink: 0;
+		border-radius: 12px 12px 0 0;
+		flex-shrink: 0;
 	}
-    
-    .chat-container[data-theme='fleety'] .chat-header {
-        color: #232627;
-    }
+
+	.chat-container[data-theme='fleety'] .chat-header {
+		color: #232627;
+	}
 
 	.header-left {
 		display: flex;
@@ -1016,20 +1095,20 @@
 		cursor: pointer;
 		transition: all 0.2s;
 		color: inherit;
-        padding: 4px;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+		padding: 4px;
+		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.minimize-button:hover {
 		background: rgba(255, 255, 255, 0.1);
 	}
-    
-    .chat-container[data-theme='fleety'] .minimize-button:hover {
-        background: rgba(0, 0, 0, 0.1);
-    }
+
+	.chat-container[data-theme='fleety'] .minimize-button:hover {
+		background: rgba(0, 0, 0, 0.1);
+	}
 
 	.icon-sm {
 		width: 20px;
@@ -1044,15 +1123,15 @@
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
-        background: var(--bg-secondary);
+		background: var(--bg-secondary);
 	}
 
 	.message-wrapper {
 		display: flex;
-        animation: fadeIn 0.3s ease-out;
+		animation: fadeIn 0.3s ease-out;
 	}
-    
-    @keyframes fadeIn {
+
+	@keyframes fadeIn {
 		from {
 			opacity: 0;
 			transform: translateY(10px);
@@ -1082,14 +1161,14 @@
 	.message-bubble.user {
 		background: var(--user-msg-bg);
 		color: var(--user-msg-text);
-        border-bottom-right-radius: 4px;
+		border-bottom-right-radius: 4px;
 	}
 
 	.message-bubble.ai {
 		background: var(--ai-msg-bg);
 		color: var(--ai-msg-text);
 		border: 1px solid var(--ai-msg-border);
-        border-bottom-left-radius: 4px;
+		border-bottom-left-radius: 4px;
 	}
 
 	/* === Typing Indicator === */
@@ -1098,10 +1177,10 @@
 		align-items: center;
 		gap: 4px;
 		padding: 8px 12px;
-        background: var(--ai-msg-bg);
-        border: 1px solid var(--ai-msg-border);
-        border-radius: 12px;
-        border-bottom-left-radius: 4px;
+		background: var(--ai-msg-bg);
+		border: 1px solid var(--ai-msg-border);
+		border-radius: 12px;
+		border-bottom-left-radius: 4px;
 	}
 
 	.typing-dots {
@@ -1116,9 +1195,11 @@
 		border-radius: 50%;
 		animation: bounce 1.4s infinite;
 	}
-    
-    @keyframes bounce {
-		0%, 80%, 100% {
+
+	@keyframes bounce {
+		0%,
+		80%,
+		100% {
 			transform: translateY(0);
 		}
 		40% {
@@ -1137,7 +1218,7 @@
 	.input-wrapper {
 		display: flex;
 		gap: 12px;
-        align-items: center;
+		align-items: center;
 	}
 
 	.message-input {
@@ -1150,16 +1231,16 @@
 		font-family: inherit;
 		color: var(--text-primary);
 		transition: border-color 0.2s;
-        outline: none;
+		outline: none;
 	}
 
 	.message-input:focus {
 		border-color: var(--accent-color);
 	}
-    
-    .message-input::placeholder {
-        color: var(--text-secondary);
-    }
+
+	.message-input::placeholder {
+		color: var(--text-secondary);
+	}
 
 	/* === Send Button === */
 	.send-button {
@@ -1173,22 +1254,24 @@
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
-		transition: opacity 0.2s, transform 0.1s;
+		transition:
+			opacity 0.2s,
+			transform 0.1s;
 		flex-shrink: 0;
 	}
-    
-    .chat-container[data-theme='fleety'] .send-button {
-        color: #232627;
-    }
+
+	.chat-container[data-theme='fleety'] .send-button {
+		color: #232627;
+	}
 
 	.send-button:hover:not(:disabled) {
 		opacity: 0.9;
-        transform: scale(1.05);
+		transform: scale(1.05);
 	}
-    
-    .send-button:active:not(:disabled) {
-        transform: scale(0.95);
-    }
+
+	.send-button:active:not(:disabled) {
+		transform: scale(0.95);
+	}
 
 	.send-button:disabled {
 		opacity: 0.4;
@@ -1196,293 +1279,293 @@
 	}
 
 	/* === Message Content Styles === */
-    .message-content {
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        line-height: 1.5;
-    }
-    
-    /* Link colors */
-    :global(.message-content a) {
-        color: inherit;
-        text-decoration: underline;
-    }
+	.message-content {
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+		line-height: 1.5;
+	}
 
-    /* Global styles for markdown content */
-    :global(.message-content h1) {
-        font-size: 1.5em;
-        font-weight: bold;
-        margin-top: 0.5em;
-        margin-bottom: 0.5em;
-        line-height: 1.3;
-    }
+	/* Link colors */
+	:global(.message-content a) {
+		color: inherit;
+		text-decoration: underline;
+	}
 
-    :global(.message-content h2) {
-        font-size: 1.3em;
-        font-weight: bold;
-        margin-top: 0.5em;
-        margin-bottom: 0.4em;
-        line-height: 1.3;
-    }
+	/* Global styles for markdown content */
+	:global(.message-content h1) {
+		font-size: 1.5em;
+		font-weight: bold;
+		margin-top: 0.5em;
+		margin-bottom: 0.5em;
+		line-height: 1.3;
+	}
 
-    :global(.message-content h3) {
-        font-size: 1.1em;
-        font-weight: bold;
-        margin-top: 0.4em;
-        margin-bottom: 0.3em;
-        line-height: 1.3;
-    }
+	:global(.message-content h2) {
+		font-size: 1.3em;
+		font-weight: bold;
+		margin-top: 0.5em;
+		margin-bottom: 0.4em;
+		line-height: 1.3;
+	}
 
-    :global(.message-content p) {
-        margin-top: 0.25em;
-        margin-bottom: 0.25em;
-        line-height: 1.5;
-    }
+	:global(.message-content h3) {
+		font-size: 1.1em;
+		font-weight: bold;
+		margin-top: 0.4em;
+		margin-bottom: 0.3em;
+		line-height: 1.3;
+	}
 
-    :global(.message-content ul),
-    :global(.message-content ol) {
-        margin-left: 1.25em;
-        margin-top: 0.5em;
-        margin-bottom: 0.5em;
-        padding-left: 0.5em;
-    }
+	:global(.message-content p) {
+		margin-top: 0.25em;
+		margin-bottom: 0.25em;
+		line-height: 1.5;
+	}
 
-    :global(.message-content li) {
-        margin-top: 0.25em;
-        margin-bottom: 0.25em;
-        line-height: 1.4;
-    }
+	:global(.message-content ul),
+	:global(.message-content ol) {
+		margin-left: 1.25em;
+		margin-top: 0.5em;
+		margin-bottom: 0.5em;
+		padding-left: 0.5em;
+	}
 
-    :global(.message-content ul li) {
-        list-style-type: disc;
-    }
+	:global(.message-content li) {
+		margin-top: 0.25em;
+		margin-bottom: 0.25em;
+		line-height: 1.4;
+	}
 
-    :global(.message-content ol li) {
-        list-style-type: decimal;
-    }
+	:global(.message-content ul li) {
+		list-style-type: disc;
+	}
 
-    :global(.message-content strong) {
-        font-weight: 700;
-    }
+	:global(.message-content ol li) {
+		list-style-type: decimal;
+	}
 
-    :global(.message-content em) {
-        font-style: italic;
-    }
+	:global(.message-content strong) {
+		font-weight: 700;
+	}
 
-    /* Blockquote wrapper */
-    :global(.message-content .blockquote-wrapper) {
-        position: relative;
-        margin-top: 0.5em;
-        margin-bottom: 0.5em;
-    }
+	:global(.message-content em) {
+		font-style: italic;
+	}
 
-    :global(.message-content .message-blockquote) {
-        position: relative;
-        border-left: 3px solid currentColor;
-        padding-left: 0.75em;
-        padding-right: 2em;
-        margin-left: 0.5em;
-        opacity: 0.85;
-        font-style: italic;
-        margin-top: 0;
-        margin-bottom: 0;
-    }
+	/* Blockquote wrapper */
+	:global(.message-content .blockquote-wrapper) {
+		position: relative;
+		margin-top: 0.5em;
+		margin-bottom: 0.5em;
+	}
 
-    /* Copy quote button */
-    :global(.message-content .copy-quote-btn) {
-        position: absolute;
-        top: 0.25em;
-        right: 0.25em;
-        background: transparent;
-        border: none;
-        padding: 0.25em;
-        border-radius: 3px;
-        cursor: pointer;
-        opacity: 0.6;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
+	:global(.message-content .message-blockquote) {
+		position: relative;
+		border-left: 3px solid currentColor;
+		padding-left: 0.75em;
+		padding-right: 2em;
+		margin-left: 0.5em;
+		opacity: 0.85;
+		font-style: italic;
+		margin-top: 0;
+		margin-bottom: 0;
+	}
 
-    :global(.message-content.dark .copy-quote-btn:hover) {
-        opacity: 1;
-        background-color: rgba(255, 255, 255, 0.1);
-    }
+	/* Copy quote button */
+	:global(.message-content .copy-quote-btn) {
+		position: absolute;
+		top: 0.25em;
+		right: 0.25em;
+		background: transparent;
+		border: none;
+		padding: 0.25em;
+		border-radius: 3px;
+		cursor: pointer;
+		opacity: 0.6;
+		transition: all 0.2s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
 
-    :global(.message-content.light .copy-quote-btn:hover) {
-        opacity: 1;
-        background-color: rgba(0, 0, 0, 0.08);
-    }
+	:global(.message-content.dark .copy-quote-btn:hover) {
+		opacity: 1;
+		background-color: rgba(255, 255, 255, 0.1);
+	}
 
-    :global(.message-content .copy-quote-btn .copy-icon) {
-        transition: opacity 0.2s;
-    }
+	:global(.message-content.light .copy-quote-btn:hover) {
+		opacity: 1;
+		background-color: rgba(0, 0, 0, 0.08);
+	}
 
-    :global(.message-content .message-link) {
-        text-decoration: underline;
-        opacity: 0.9;
-        transition: opacity 0.2s;
-        font-weight: 500;
-    }
+	:global(.message-content .copy-quote-btn .copy-icon) {
+		transition: opacity 0.2s;
+	}
 
-    :global(.message-content .message-link:hover) {
-        opacity: 1;
-        text-decoration: underline;
-    }
+	:global(.message-content .message-link) {
+		text-decoration: underline;
+		opacity: 0.9;
+		transition: opacity 0.2s;
+		font-weight: 500;
+	}
 
-    /* Inline code */
-    :global(.message-content .message-inline-code) {
-        background-color: rgba(127, 127, 127, 0.15);
-        padding: 0.15em 0.4em;
-        border-radius: 3px;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 0.9em;
-        border: 1px solid rgba(127, 127, 127, 0.2);
-    }
+	:global(.message-content .message-link:hover) {
+		opacity: 1;
+		text-decoration: underline;
+	}
 
-    /* Inline code wrapper */
-    :global(.message-content .inline-code-wrapper) {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25em;
-        position: relative;
-    }
+	/* Inline code */
+	:global(.message-content .message-inline-code) {
+		background-color: rgba(127, 127, 127, 0.15);
+		padding: 0.15em 0.4em;
+		border-radius: 3px;
+		font-family: 'Courier New', Courier, monospace;
+		font-size: 0.9em;
+		border: 1px solid rgba(127, 127, 127, 0.2);
+	}
 
-    /* Copy inline code button */
-    :global(.message-content .copy-inline-btn) {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: transparent;
-        border: none;
-        padding: 0.2em;
-        border-radius: 2px;
-        cursor: pointer;
-        opacity: 0;
-        transition: all 0.2s;
-        vertical-align: middle;
-    }
+	/* Inline code wrapper */
+	:global(.message-content .inline-code-wrapper) {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25em;
+		position: relative;
+	}
 
-    :global(.message-content .inline-code-wrapper:hover .copy-inline-btn) {
-        opacity: 0.7;
-    }
+	/* Copy inline code button */
+	:global(.message-content .copy-inline-btn) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: none;
+		padding: 0.2em;
+		border-radius: 2px;
+		cursor: pointer;
+		opacity: 0;
+		transition: all 0.2s;
+		vertical-align: middle;
+	}
 
-    :global(.message-content .copy-inline-btn:hover) {
-        opacity: 1 !important;
-        background-color: rgba(127, 127, 127, 0.2);
-    }
+	:global(.message-content .inline-code-wrapper:hover .copy-inline-btn) {
+		opacity: 0.7;
+	}
 
-    :global(.message-content .copy-inline-btn .copy-icon) {
-        transition: all 0.2s;
-    }
+	:global(.message-content .copy-inline-btn:hover) {
+		opacity: 1 !important;
+		background-color: rgba(127, 127, 127, 0.2);
+	}
 
-    /* Code block wrapper */
-    :global(.message-content .code-block-wrapper) {
-        margin-top: 0.5em;
-        margin-bottom: 0.5em;
-        border-radius: 6px;
-        overflow: hidden;
-    }
+	:global(.message-content .copy-inline-btn .copy-icon) {
+		transition: all 0.2s;
+	}
 
-    /* Code block header */
-    :global(.message-content .code-block-header) {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.4em 0.75em;
-        background-color: rgba(127, 127, 127, 0.1);
-        border-bottom: 1px solid rgba(127, 127, 127, 0.15);
-    }
+	/* Code block wrapper */
+	:global(.message-content .code-block-wrapper) {
+		margin-top: 0.5em;
+		margin-bottom: 0.5em;
+		border-radius: 6px;
+		overflow: hidden;
+	}
 
-    :global(.message-content .code-language) {
-        font-size: 0.75em;
-        text-transform: uppercase;
-        opacity: 0.6;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-    }
+	/* Code block header */
+	:global(.message-content .code-block-header) {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.4em 0.75em;
+		background-color: rgba(127, 127, 127, 0.1);
+		border-bottom: 1px solid rgba(127, 127, 127, 0.15);
+	}
 
-    /* Copy button */
-    :global(.message-content .copy-code-btn) {
-        display: flex;
-        align-items: center;
-        gap: 0.3em;
-        background: transparent;
-        border: none;
-        padding: 0.25em 0.5em;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.75em;
-        font-weight: 500;
-        opacity: 0.7;
-        transition: all 0.2s;
-    }
+	:global(.message-content .code-language) {
+		font-size: 0.75em;
+		text-transform: uppercase;
+		opacity: 0.6;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+	}
 
-    :global(.message-content .copy-code-btn:hover) {
-        opacity: 1;
-        background-color: rgba(127, 127, 127, 0.15);
-    }
+	/* Copy button */
+	:global(.message-content .copy-code-btn) {
+		display: flex;
+		align-items: center;
+		gap: 0.3em;
+		background: transparent;
+		border: none;
+		padding: 0.25em 0.5em;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 0.75em;
+		font-weight: 500;
+		opacity: 0.7;
+		transition: all 0.2s;
+	}
 
-    :global(.message-content .copy-icon) {
-        width: 14px;
-        height: 14px;
-    }
+	:global(.message-content .copy-code-btn:hover) {
+		opacity: 1;
+		background-color: rgba(127, 127, 127, 0.15);
+	}
 
-    /* Code block */
-    :global(.message-content .message-code-block) {
-        background-color: rgba(127, 127, 127, 0.05);
-        border: 1px solid rgba(127, 127, 127, 0.15);
-        border-top: none;
-        padding: 0.75em;
-        border-radius: 0 0 6px 6px;
-        overflow-x: auto;
-        margin: 0;
-    }
+	:global(.message-content .copy-icon) {
+		width: 14px;
+		height: 14px;
+	}
 
-    :global(.message-content .message-code-block code) {
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 0.9em;
-        line-height: 1.5;
-    }
+	/* Code block */
+	:global(.message-content .message-code-block) {
+		background-color: rgba(127, 127, 127, 0.05);
+		border: 1px solid rgba(127, 127, 127, 0.15);
+		border-top: none;
+		padding: 0.75em;
+		border-radius: 0 0 6px 6px;
+		overflow-x: auto;
+		margin: 0;
+	}
 
-    :global(.message-content hr) {
-        border: none;
-        border-top: 1px solid currentColor;
-        opacity: 0.3;
-        margin-top: 0.75em;
-        margin-bottom: 0.75em;
-    }
+	:global(.message-content .message-code-block code) {
+		font-family: 'Courier New', Courier, monospace;
+		font-size: 0.9em;
+		line-height: 1.5;
+	}
 
-    :global(.message-content table) {
-        border-collapse: collapse;
-        width: 100%;
-        margin-top: 0.5em;
-        margin-bottom: 0.5em;
-        font-size: 0.95em;
-    }
+	:global(.message-content hr) {
+		border: none;
+		border-top: 1px solid currentColor;
+		opacity: 0.3;
+		margin-top: 0.75em;
+		margin-bottom: 0.75em;
+	}
 
-    :global(.message-content table th),
-    :global(.message-content table td) {
-        border: 1px solid rgba(127, 127, 127, 0.2);
-        padding: 0.4em 0.6em;
-    }
+	:global(.message-content table) {
+		border-collapse: collapse;
+		width: 100%;
+		margin-top: 0.5em;
+		margin-bottom: 0.5em;
+		font-size: 0.95em;
+	}
 
-    :global(.message-content table th) {
-        background-color: rgba(127, 127, 127, 0.05);
-        font-weight: 600;
-    }
+	:global(.message-content table th),
+	:global(.message-content table td) {
+		border: 1px solid rgba(127, 127, 127, 0.2);
+		padding: 0.4em 0.6em;
+	}
 
-    /* Handle first and last element margins */
-    :global(.message-content > *:first-child) {
-        margin-top: 0;
-    }
+	:global(.message-content table th) {
+		background-color: rgba(127, 127, 127, 0.05);
+		font-weight: 600;
+	}
 
-    :global(.message-content > *:last-child) {
-        margin-bottom: 0;
-    }
-    
-    /* Mobile Responsiveness */
+	/* Handle first and last element margins */
+	:global(.message-content > *:first-child) {
+		margin-top: 0;
+	}
+
+	:global(.message-content > *:last-child) {
+		margin-bottom: 0;
+	}
+
+	/* Mobile Responsiveness */
 	@media (max-width: 480px) {
 		.chat-container {
 			width: calc(100vw - 40px);
