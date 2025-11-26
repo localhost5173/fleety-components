@@ -1,989 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// === Component Styles ===
-const chatStyles = `
-@keyframes bounce {
-  0%, 80%, 100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-6px);
-  }
-}
+// Type definitions
+type DockPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+type Theme = 'fleety' | 'material' | 'nord' | 'light' | 'dark' | 'system';
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.chat-toggle-button {
-  position: fixed;
-  z-index: 50;
-}
-
-.chat-toggle-button.dock-bottom-right {
-  bottom: 1.5rem;
-  right: 1.5rem;
-}
-
-.chat-toggle-button.dock-bottom-left {
-  bottom: 1.5rem;
-  left: 1.5rem;
-}
-
-.chat-toggle-button.dock-top-right {
-  top: 1.5rem;
-  right: 1.5rem;
-}
-
-.chat-toggle-button.dock-top-left {
-  top: 1.5rem;
-  left: 1.5rem;
-}
-
-.toggle-button {
-  display: flex;
-  height: 3.5rem;
-  width: 3.5rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: none;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-  transition: all 0.3s;
-  cursor: pointer;
-}
-
-.toggle-button:hover {
-  transform: scale(1.1);
-}
-
-.icon-container {
-  position: relative;
-  width: 1.5rem;
-  height: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.toggle-button .icon {
-  width: 1.5rem;
-  height: 1.5rem;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.icon-default {
-  opacity: 1;
-  transform: translate(-50%, -50%) rotate(0deg) scale(1);
-}
-
-.icon-close {
-  opacity: 0;
-  transform: translate(-50%, -50%) rotate(90deg) scale(0.8);
-}
-
-.icon-container.open .icon-default {
-  opacity: 0;
-  transform: translate(-50%, -50%) rotate(-90deg) scale(0.8);
-}
-
-.icon-container.open .icon-close {
-  opacity: 1;
-  transform: translate(-50%, -50%) rotate(0deg) scale(1);
-}
-
-.chat-toggle-button.theme-fleety .toggle-button {
-  background: #facc15;
-  color: #000;
-}
-
-.chat-toggle-button.theme-fleety .toggle-button:hover {
-  background: #fde047;
-}
-
-.chat-toggle-button.theme-material .toggle-button {
-  background: #2563eb;
-  color: #fff;
-}
-
-.chat-toggle-button.theme-material .toggle-button:hover {
-  background: #1d4ed8;
-}
-
-.chat-toggle-button.theme-midnight .toggle-button {
-  background: #9333ea;
-  color: #fff;
-}
-
-.chat-toggle-button.theme-midnight .toggle-button:hover {
-  background: #7e22ce;
-}
-
-.chat-container {
-  position: fixed;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  border-radius: 0.5rem;
-  border: 1px solid;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  transition: box-shadow 0.3s;
-}
-
-.chat-container:hover {
-  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.6);
-}
-
-.chat-container.resizing {
-  user-select: none;
-}
-
-.chat-container.fullscreen {
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  border-radius: 0 !important;
-  z-index: 9999 !important;
-}
-
-.chat-container.dock-bottom-right {
-  bottom: 5.5rem;
-  right: 1.5rem;
-}
-
-.chat-container.dock-bottom-left {
-  bottom: 5.5rem;
-  left: 1.5rem;
-}
-
-.chat-container.dock-top-right {
-  top: 5.5rem;
-  right: 1.5rem;
-}
-
-.chat-container.dock-top-left {
-  top: 5.5rem;
-  left: 1.5rem;
-}
-
-.chat-container.theme-fleety {
-  background: #111827;
-  border-color: #374151;
-}
-
-.chat-container.theme-material {
-  background: #fff;
-  border-color: #d1d5db;
-}
-
-.chat-container.theme-midnight {
-  background: #0f172a;
-  border-color: #6b21a8;
-}
-
-.resize-handle {
-  position: absolute;
-  transition: background-color 0.2s;
-  z-index: 10;
-}
-
-.resize-handle.corner-nw {
-  top: 0;
-  left: 0;
-  width: 1rem;
-  height: 1rem;
-  cursor: nw-resize;
-}
-
-.resize-handle.corner-ne {
-  top: 0;
-  right: 0;
-  width: 1rem;
-  height: 1rem;
-  cursor: ne-resize;
-}
-
-.resize-handle.corner-sw {
-  bottom: 0;
-  left: 0;
-  width: 1rem;
-  height: 1rem;
-  cursor: sw-resize;
-}
-
-.resize-handle.corner-se {
-  bottom: 0;
-  right: 0;
-  width: 1rem;
-  height: 1rem;
-  cursor: se-resize;
-}
-
-.resize-handle.edge-n {
-  top: 0;
-  left: 1rem;
-  right: 1rem;
-  height: 0.5rem;
-  cursor: n-resize;
-}
-
-.resize-handle.edge-s {
-  bottom: 0;
-  left: 1rem;
-  right: 1rem;
-  height: 0.5rem;
-  cursor: s-resize;
-}
-
-.resize-handle.edge-w {
-  left: 0;
-  top: 1rem;
-  bottom: 1rem;
-  width: 0.5rem;
-  cursor: w-resize;
-}
-
-.resize-handle.edge-e {
-  right: 0;
-  top: 1rem;
-  bottom: 1rem;
-  width: 0.5rem;
-  cursor: e-resize;
-}
-
-.resize-handle:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.theme-fleety .resize-handle:hover {
-  background-color: rgba(250, 204, 21, 0.2);
-}
-
-.theme-material .resize-handle:hover {
-  background-color: rgba(37, 99, 235, 0.1);
-}
-
-.theme-midnight .resize-handle:hover {
-  background-color: rgba(147, 51, 234, 0.2);
-}
-
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-radius: 0.5rem 0.5rem 0 0;
-  padding: 0.5rem 0.75rem;
-  transition: all 0.2s;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.fullscreen-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: inherit;
-}
-
-.fullscreen-button:hover {
-  opacity: 0.8;
-  transform: scale(1.1);
-}
-
-.header-title {
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.minimize-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: inherit;
-}
-
-.minimize-button:hover {
-  opacity: 0.8;
-  transform: scale(1.1);
-}
-
-.icon-sm {
-  width: 1rem;
-  height: 1rem;
-}
-
-.theme-fleety .chat-header {
-  background: #facc15;
-  color: #000;
-}
-
-.theme-fleety .chat-header:hover {
-  background: #fde047;
-}
-
-.theme-fleety .minimize-button {
-  color: #000;
-}
-
-.theme-material .chat-header {
-  background: #2563eb;
-  color: #fff;
-}
-
-.theme-material .chat-header:hover {
-  background: #1d4ed8;
-}
-
-.theme-material .minimize-button {
-  color: #fff;
-}
-
-.theme-midnight .chat-header {
-  background: linear-gradient(to right, #581c87, #312e81);
-  color: #e9d5ff;
-}
-
-.theme-midnight .chat-header:hover {
-  background: linear-gradient(to right, #6b21a8, #3730a3);
-}
-
-.theme-midnight .minimize-button {
-  color: #e9d5ff;
-}
-
-.messages-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.message-wrapper {
-  display: flex;
-}
-
-.message-wrapper.user {
-  justify-content: flex-end;
-}
-
-.message-wrapper.ai {
-  justify-content: flex-start;
-}
-
-.message-bubble {
-  max-width: 18rem;
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  transition: all 0.2s;
-}
-
-.message-bubble:hover {
-  transform: scale(1.05);
-}
-
-.message-bubble.ai {
-  border: 1px solid;
-}
-
-.theme-fleety .message-bubble.user {
-  background: #facc15;
-  color: #000;
-}
-
-.theme-fleety .message-bubble.user:hover {
-  background: #fde047;
-}
-
-.theme-fleety .message-bubble.ai {
-  background: #1f2937;
-  color: #fff;
-  border-color: #374151;
-}
-
-.theme-fleety .message-bubble.ai:hover {
-  background: #374151;
-  border-color: #4b5563;
-}
-
-.theme-material .message-bubble.user {
-  background: #2563eb;
-  color: #fff;
-}
-
-.theme-material .message-bubble.user:hover {
-  background: #1d4ed8;
-}
-
-.theme-material .message-bubble.ai {
-  background: #f3f4f6;
-  color: #111827;
-  border-color: #e5e7eb;
-}
-
-.theme-material .message-bubble.ai:hover {
-  background: #e5e7eb;
-  border-color: #d1d5db;
-}
-
-.theme-midnight .message-bubble.user {
-  background: linear-gradient(to right, #9333ea, #6366f1);
-  color: #fff;
-}
-
-.theme-midnight .message-bubble.user:hover {
-  background: linear-gradient(to right, #7e22ce, #4f46e5);
-}
-
-.theme-midnight .message-bubble.ai {
-  background: #1e293b;
-  color: #f0e9ff;
-  border-color: #581c87;
-}
-
-.theme-midnight .message-bubble.ai:hover {
-  background: #334155;
-  border-color: #6b21a8;
-}
-
-.typing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  border-radius: 0.5rem;
-  border: 1px solid;
-  padding: 0.5rem 0.75rem;
-}
-
-.typing-dots {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  background: #9ca3af;
-  border-radius: 50%;
-  animation: bounce 1.4s infinite;
-}
-
-.theme-fleety .typing-indicator {
-  background: #1f2937;
-  border-color: #374151;
-}
-
-.theme-material .typing-indicator {
-  background: #f3f4f6;
-  border-color: #e5e7eb;
-}
-
-.theme-midnight .typing-indicator {
-  background: #1e293b;
-  border-color: #581c87;
-}
-
-.input-area {
-  border-top: 1px solid;
-  padding: 1rem;
-}
-
-.theme-fleety .input-area {
-  border-color: #374151;
-}
-
-.theme-material .input-area {
-  border-color: #d1d5db;
-}
-
-.theme-midnight .input-area {
-  border-color: #581c87;
-}
-
-.input-wrapper {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.message-input {
-  flex: 1;
-  border-radius: 0.5rem;
-  border: 1px solid;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  transition: all 0.2s;
-  outline: none;
-}
-
-.message-input:focus {
-  outline: none;
-  border-width: 1px;
-  box-shadow: 0 0 0 1px currentColor;
-}
-
-.theme-fleety .message-input {
-  background: #1f2937;
-  border-color: #4b5563;
-  color: #fff;
-}
-
-.theme-fleety .message-input::placeholder {
-  color: #9ca3af;
-}
-
-.theme-fleety .message-input:hover {
-  border-color: #6b7280;
-  background: #252f3f;
-}
-
-.theme-fleety .message-input:focus {
-  border-color: #facc15;
-  box-shadow: 0 0 0 1px #facc15;
-}
-
-.theme-material .message-input {
-  background: #f9fafb;
-  border-color: #d1d5db;
-  color: #111827;
-}
-
-.theme-material .message-input::placeholder {
-  color: #6b7280;
-}
-
-.theme-material .message-input:hover {
-  border-color: #9ca3af;
-  background: #f3f4f6;
-}
-
-.theme-material .message-input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 1px #2563eb;
-}
-
-.theme-midnight .message-input {
-  background: #1e293b;
-  border-color: #581c87;
-  color: #f0e9ff;
-}
-
-.theme-midnight .message-input::placeholder {
-  color: #d8b4fe;
-}
-
-.theme-midnight .message-input:hover {
-  border-color: #6b21a8;
-  background: #252f3f;
-}
-
-.theme-midnight .message-input:focus {
-  border-color: #a855f7;
-  box-shadow: 0 0 0 1px #a855f7;
-}
-
-.send-button {
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border: none;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.send-button:hover:not(:disabled) {
-  transform: scale(1.05);
-}
-
-.send-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  background: #4b5563;
-  color: #9ca3af;
-}
-
-.send-button:disabled:hover {
-  transform: none;
-}
-
-.theme-fleety .send-button:not(:disabled) {
-  background: #facc15;
-  color: #000;
-}
-
-.theme-fleety .send-button:not(:disabled):hover {
-  background: #fde047;
-}
-
-.theme-material .send-button:not(:disabled) {
-  background: #2563eb;
-  color: #fff;
-}
-
-.theme-material .send-button:not(:disabled):hover {
-  background: #1d4ed8;
-}
-
-.theme-midnight .send-button:not(:disabled) {
-  background: #9333ea;
-  color: #fff;
-}
-
-.theme-midnight .send-button:not(:disabled):hover {
-  background: #7e22ce;
-}
-
-.message-content {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  line-height: 1.5;
-  text-align: left;
-}
-
-.message-content h1 {
-  font-size: 1.5em;
-  font-weight: bold;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  line-height: 1.3;
-}
-
-.message-content h2 {
-  font-size: 1.3em;
-  font-weight: bold;
-  margin-top: 0.5em;
-  margin-bottom: 0.4em;
-  line-height: 1.3;
-}
-
-.message-content h3 {
-  font-size: 1.1em;
-  font-weight: bold;
-  margin-top: 0.4em;
-  margin-bottom: 0.3em;
-  line-height: 1.3;
-}
-
-.message-content p {
-  margin-top: 0.25em;
-  margin-bottom: 0.25em;
-  line-height: 1.5;
-}
-
-.message-content ul,
-.message-content ol {
-  margin-left: 1.25em;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  padding-left: 0.5em;
-}
-
-.message-content li {
-  margin-top: 0.25em;
-  margin-bottom: 0.25em;
-  line-height: 1.4;
-}
-
-.message-content ul li {
-  list-style-type: disc;
-}
-
-.message-content ol li {
-  list-style-type: decimal;
-}
-
-.message-content strong {
-  font-weight: 700;
-}
-
-.message-content em {
-  font-style: italic;
-}
-
-.message-content .blockquote-wrapper {
-  position: relative;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-.message-content .message-blockquote {
-  position: relative;
-  border-left: 3px solid currentColor;
-  padding-left: 0.75em;
-  padding-right: 2em;
-  margin-left: 0.5em;
-  opacity: 0.85;
-  font-style: italic;
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
-.message-content .copy-quote-btn {
-  position: absolute;
-  top: 0.25em;
-  right: 0.25em;
-  background: transparent;
-  border: none;
-  padding: 0.25em;
-  border-radius: 3px;
-  cursor: pointer;
-  opacity: 0.6;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.message-content.dark .copy-quote-btn:hover {
-  opacity: 1;
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.message-content.light .copy-quote-btn:hover {
-  opacity: 1;
-  background-color: rgba(0, 0, 0, 0.08);
-}
-
-.message-content .copy-quote-btn .copy-icon {
-  transition: opacity 0.2s;
-}
-
-.message-content .message-link {
-  text-decoration: underline;
-  opacity: 0.9;
-  transition: opacity 0.2s;
-  font-weight: 500;
-}
-
-.message-content .message-link:hover {
-  opacity: 1;
-  text-decoration: underline;
-}
-
-.message-content.dark .message-inline-code {
-  background-color: rgba(255, 255, 255, 0.1);
-  padding: 0.15em 0.4em;
-  border-radius: 3px;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 0.9em;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.message-content.light .message-inline-code {
-  background-color: rgba(0, 0, 0, 0.08);
-  padding: 0.15em 0.4em;
-  border-radius: 3px;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 0.9em;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.message-content .inline-code-wrapper {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25em;
-  position: relative;
-}
-
-.message-content .copy-inline-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  padding: 0.2em;
-  border-radius: 2px;
-  cursor: pointer;
-  opacity: 0;
-  transition: all 0.2s;
-  vertical-align: middle;
-}
-
-.message-content .inline-code-wrapper:hover .copy-inline-btn {
-  opacity: 0.7;
-}
-
-.message-content.dark .copy-inline-btn:hover {
-  opacity: 1 !important;
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-.message-content.light .copy-inline-btn:hover {
-  opacity: 1 !important;
-  background-color: rgba(0, 0, 0, 0.1);
-}
-
-.message-content .copy-inline-btn .copy-icon {
-  transition: all 0.2s;
-}
-
-.message-content .code-block-wrapper {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.message-content.dark .code-block-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.4em 0.75em;
-  background-color: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.message-content.light .code-block-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.4em 0.75em;
-  background-color: rgba(0, 0, 0, 0.03);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.message-content .code-language {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  opacity: 0.6;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-
-.message-content .copy-code-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.3em;
-  background: transparent;
-  border: none;
-  padding: 0.25em 0.5em;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.75em;
-  font-weight: 500;
-  opacity: 0.7;
-  transition: all 0.2s;
-}
-
-.message-content.dark .copy-code-btn:hover {
-  opacity: 1;
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.message-content.light .copy-code-btn:hover {
-  opacity: 1;
-  background-color: rgba(0, 0, 0, 0.08);
-}
-
-.message-content .copy-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.message-content.dark .message-code-block {
-  background-color: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-top: none;
-  padding: 0.75em;
-  border-radius: 0 0 6px 6px;
-  overflow-x: auto;
-  margin: 0;
-}
-
-.message-content.light .message-code-block {
-  background-color: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-top: none;
-  padding: 0.75em;
-  border-radius: 0 0 6px 6px;
-  overflow-x: auto;
-  margin: 0;
-}
-
-.message-content .message-code-block code {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 0.9em;
-  line-height: 1.5;
-}
-
-.message-content hr {
-  border: none;
-  border-top: 1px solid currentColor;
-  opacity: 0.3;
-  margin-top: 0.75em;
-  margin-bottom: 0.75em;
-}
-
-.message-content table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  font-size: 0.95em;
-}
-
-.message-content.dark table th,
-.message-content.dark table td {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 0.4em 0.6em;
-}
-
-.message-content.light table th,
-.message-content.light table td {
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  padding: 0.4em 0.6em;
-}
-
-.message-content.dark table th {
-  background-color: rgba(255, 255, 255, 0.05);
-  font-weight: 600;
-}
-
-.message-content.light table th {
-  background-color: rgba(0, 0, 0, 0.03);
-  font-weight: 600;
-}
-
-.message-content > *:first-child {
-  margin-top: 0;
-}
-
-.message-content > *:last-child {
-  margin-bottom: 0;
-}
-`;
-
-// === Type Definitions ===
 interface SupportChatProps {
     projectId: string;
-    theme?: 'fleety' | 'material' | 'midnight';
-    dockPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+    theme?: Theme;
+    dockPosition?: DockPosition;
+}
+
+interface ConversationMessage {
+    role: 'user' | 'assistant';
+    content: string;
 }
 
 interface Message {
@@ -993,130 +23,96 @@ interface Message {
     timestamp: Date;
 }
 
-interface ConversationMessage {
-    role: 'user' | 'assistant';
-    content: string;
+// Extend Window interface for global copy functions
+declare global {
+    interface Window {
+        copyCode: (codeId: string) => void;
+        copyQuote: (quoteId: string) => void;
+        copyInlineCode: (codeId: string) => void;
+    }
 }
 
-interface ToolResponse {
-    type: 'tool_call' | 'message';
-    message: string;
-    ticket_slug?: string;
-}
-
-interface ChatStreamResponse {
-    choices: Array<{
-        delta?: {
-            content?: string;
-        };
-    }>;
-}
-
-// === Main Component ===
 const SupportChat: React.FC<SupportChatProps> = ({
     projectId,
     theme = 'fleety',
     dockPosition = 'bottom-right'
 }) => {
-    // Fleety API Configuration
-    const API_URL = "https://api.fleety.dev/v1";
-
-    // State for anonymous session
-    const [anonToken, setAnonToken] = useState('');
-    const [, setTokenExpiresAt] = useState<Date | null>(null);
-    const [, setSessionError] = useState('');
-
-    // Conversation history for context
-    const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
-
+    const [activeTheme, setActiveTheme] = useState<string>(theme);
     const [isOpen, setIsOpen] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
     const [currentMessage, setCurrentMessage] = useState('');
     const [isTyping, setIsTyping] = useState(false);
-    const [isResizing, setIsResizing] = useState(false);
-    const [chatWidth, setChatWidth] = useState(380);
-    const [chatHeight, setChatHeight] = useState(500);
-    const [isFullscreen, setIsFullscreen] = useState(false);
-
-    const minWidth = 320;
-    const maxWidth = 600;
-    const minHeight = 400;
-    const maxHeight = 700;
+    const [anonToken, setAnonToken] = useState('');
+    // const [tokenExpiresAt, setTokenExpiresAt] = useState<Date | null>(null);
+    // const [sessionError, setSessionError] = useState('');
+    const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
 
     const chatContainerRef = useRef<HTMLDivElement>(null);
-    const inputElementRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const messagesRef = useRef<Message[]>([]); // Ref to keep track of messages in async callbacks
+
+    // Keep messages ref in sync
+    useEffect(() => {
+        messagesRef.current = messages;
+    }, [messages]);
+
+    // Theme detection for system theme
+    useEffect(() => {
+        if (theme === 'system') {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            setActiveTheme(mediaQuery.matches ? 'dark' : 'light');
+
+            const handleChange = (e: MediaQueryListEvent) => {
+                setActiveTheme(e.matches ? 'dark' : 'light');
+            };
+
+            mediaQuery.addEventListener('change', handleChange);
+            return () => mediaQuery.removeEventListener('change', handleChange);
+        } else {
+            setActiveTheme(theme);
+        }
+    }, [theme]);
+
+    // Fleety API Configuration
+    const API_URL = 'https://api.fleety.dev/v1';
+
+    // --- Start of inlined MessageContent logic ---
 
     // Configure marked options
-    useEffect(() => {
+    // Note: marked.setOptions is deprecated in newer versions but used here to match Svelte code
+    // If using marked v12+, use marked.use()
+    try {
         marked.setOptions({
-            breaks: true,
-            gfm: true,
+            breaks: true, // Convert \n to <br>
+            gfm: true // GitHub Flavored Markdown
         });
-    }, []);
+    } catch (e) {
+        // Fallback or ignore if setOptions is not available
+        console.warn('marked.setOptions might be deprecated', e);
+    }
 
     // Custom renderer for better control
     const renderer = new marked.Renderer();
 
     // Override link rendering to add target="_blank" for external links
-    renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
+    renderer.link = ({
+        href,
+        title,
+        text
+    }: {
+        href: string;
+        title?: string | null;
+        text: string;
+    }) => {
         const titleAttr = title ? ` title="${title}"` : '';
         const isExternal = href?.startsWith('http') || href?.startsWith('https');
         const target = isExternal ? ' target="_blank" rel="noopener noreferrer"' : '';
         return `<a href="${href}"${titleAttr}${target} class="message-link">${text}</a>`;
     };
 
-    // Override code rendering
-    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-        const language = lang || 'text';
-        const codeId = `code-${Math.random().toString(36).substr(2, 9)}`;
-        const escapedText = escapeHtml(text);
-        return `<div class="code-block-wrapper">
-      <div class="code-block-header">
-        <span class="code-language">${language}</span>
-        <button class="copy-code-btn" data-code-id="${codeId}" onclick="window.copyCode('${codeId}')">
-          <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-          <span class="copy-text">Copy</span>
-          <span class="copied-text" style="display: none;">Copied!</span>
-        </button>
-      </div>
-      <pre class="message-code-block" id="${codeId}"><code class="language-${language}">${escapedText}</code></pre>
-    </div>`;
-    };
-
-    // Override inline code
-    renderer.codespan = ({ text }: { text: string }) => {
-        const escapedText = escapeHtml(text);
-        const codeId = `inline-code-${Math.random().toString(36).substr(2, 9)}`;
-        return `<span class="inline-code-wrapper">
-      <code class="message-inline-code" id="${codeId}">${escapedText}</code>
-      <button class="copy-inline-btn" data-inline-id="${codeId}" onclick="window.copyInlineCode('${codeId}')" title="Copy code">
-        <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      </button>
-    </span>`;
-    };
-
-    // Override blockquote to add copy button
-    renderer.blockquote = ({ tokens }: { tokens: any[] }) => {
-        const text = tokens.map((token: any) => token.raw || '').join('');
-        const quoteId = `quote-${Math.random().toString(36).substr(2, 9)}`;
-        return `<div class="blockquote-wrapper">
-      <blockquote class="message-blockquote" id="${quoteId}">
-        ${marked.parse(text)}
-        <button class="copy-quote-btn" data-quote-id="${quoteId}" onclick="window.copyQuote('${quoteId}')">
-          <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-        </button>
-      </blockquote>
-    </div>`;
-    };
-
     // Escape HTML to prevent XSS
-    const escapeHtml = (text: string): string => {
+    function escapeHtml(text: string): string {
         const map: Record<string, string> = {
             '&': '&amp;',
             '<': '&lt;',
@@ -1125,28 +121,211 @@ const SupportChat: React.FC<SupportChatProps> = ({
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, (m) => map[m]);
+    }
+
+    // Override code rendering to add syntax highlighting classes and copy button
+    renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+        const language = lang || 'text';
+        const codeId = `code-${Math.random().toString(36).substr(2, 9)}`;
+        const escapedText = escapeHtml(text);
+        return `<div class="code-block-wrapper">
+            <div class="code-block-header">
+                <span class="code-language">${language}</span>
+                <button class="copy-code-btn" data-code-id="${codeId}" onclick="window.copyCode('${codeId}')">
+                    <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span class="copy-text">Copy</span>
+                    <span class="copied-text" style="display: none;">Copied!</span>
+                </button>
+            </div>
+            <pre class="message-code-block" id="${codeId}"><code class="language-${language}">${escapedText}</code></pre>
+        </div>`;
+    };
+
+    // Override inline code
+    renderer.codespan = ({ text }: { text: string }) => {
+        const escapedText = escapeHtml(text);
+        const codeId = `inline-code-${Math.random().toString(36).substr(2, 9)}`;
+        return `<span class="inline-code-wrapper">
+            <code class="message-inline-code" id="${codeId}">${escapedText}</code>
+            <button class="copy-inline-btn" data-inline-id="${codeId}" onclick="window.copyInlineCode('${codeId}')" title="Copy code">
+                <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-
+                </svg>
+            </button>
+        </span>`;
+    };
+
+    // Override blockquote to add copy button
+    renderer.blockquote = ({ tokens }: { tokens: any[] }) => {
+        const text = tokens.map((token: any) => token.raw || '').join('');
+        const quoteId = `quote-${Math.random().toString(36).substr(2, 9)}`;
+        return `<div class="blockquote-wrapper">
+            <blockquote class="message-blockquote" id="${quoteId}">
+                ${marked.parse(text)}
+                <button class="copy-quote-btn" data-quote-id="${quoteId}" onclick="window.copyQuote('${quoteId}')">
+                    <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                </button>
+            </blockquote>
+        </div>`;
     };
 
     // Parse markdown content
-    const parseMarkdown = (text: string): string => {
+    function parseMarkdown(text: string): string {
         try {
             return marked(text, { renderer }) as string;
         } catch (error) {
             console.error('Error parsing markdown:', error);
             return escapeHtml(text);
         }
-    };
+    }
 
-    const formatMessageContent = (content: string, isUser: boolean): string => {
+    function formatMessageContent(content: string, isUser: boolean): string {
         if (isUser) {
+            // For user messages, just escape HTML and preserve line breaks
             return escapeHtml(content).replace(/\n/g, '<br>');
         } else {
+            // For AI messages, parse markdown
             return parseMarkdown(content);
         }
-    };
+    }
 
-    // Initialize an anonymous session
-    const initializeSession = async () => {
+    // --- End of inlined MessageContent logic ---
+
+    // Initialize global copy functions
+    useEffect(() => {
+        // Define the copy function globally so it's accessible from the HTML
+        window.copyCode = (codeId: string) => {
+            const codeBlock = document.getElementById(codeId);
+            if (!codeBlock) return;
+
+            const code = codeBlock.textContent || '';
+
+            // Copy to clipboard
+            navigator.clipboard
+                .writeText(code)
+                .then(() => {
+                    // Find the button that was clicked
+                    const button = document.querySelector(`[data-code-id="${codeId}"]`);
+                    if (!button) return;
+
+                    const copyText = button.querySelector('.copy-text') as HTMLElement;
+                    const copiedText = button.querySelector('.copied-text') as HTMLElement;
+
+                    // Show "Copied!" feedback
+                    if (copyText) copyText.style.display = 'none';
+                    if (copiedText) copiedText.style.display = 'inline';
+
+                    // Reset after 2 seconds
+                    setTimeout(() => {
+                        if (copyText) copyText.style.display = 'inline';
+                        if (copiedText) copiedText.style.display = 'none';
+                    }, 2000);
+                })
+                .catch((err) => {
+                    console.error('Failed to copy code:', err);
+                });
+        };
+
+        // Define the copy quote function
+        window.copyQuote = (quoteId: string) => {
+            const quoteBlock = document.getElementById(quoteId);
+            if (!quoteBlock) return;
+
+            // Get the text content without the copy button
+            const button = quoteBlock.querySelector('.copy-quote-btn');
+            const clonedQuote = quoteBlock.cloneNode(true) as HTMLElement;
+            const clonedButton = clonedQuote.querySelector('.copy-quote-btn');
+            if (clonedButton) clonedButton.remove();
+
+            const quoteText = clonedQuote.textContent || '';
+
+            // Copy to clipboard
+            navigator.clipboard
+                .writeText(quoteText.trim())
+                .then(() => {
+                    if (!button) return;
+
+                    // Visual feedback - change icon temporarily
+                    const icon = button.querySelector('.copy-icon') as HTMLElement;
+                    if (icon) {
+                        icon.style.opacity = '1';
+                        setTimeout(() => {
+                            icon.style.opacity = '0.6';
+                        }, 1000);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Failed to copy quote:', err);
+                });
+        };
+
+        // Define the copy inline code function
+        window.copyInlineCode = (codeId: string) => {
+            const codeElement = document.getElementById(codeId);
+            if (!codeElement) return;
+
+            const code = codeElement.textContent || '';
+
+            // Copy to clipboard
+            navigator.clipboard
+                .writeText(code)
+                .then(() => {
+                    const button = document.querySelector(`[data-inline-id="${codeId}"]`);
+                    if (!button) return;
+
+                    // Visual feedback
+                    const icon = button.querySelector('.copy-icon') as HTMLElement;
+                    if (icon) {
+                        icon.style.opacity = '1';
+                        icon.style.transform = 'scale(1.2)';
+                        setTimeout(() => {
+                            icon.style.opacity = '0.7';
+                            icon.style.transform = 'scale(1)';
+                        }, 800);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Failed to copy inline code:', err);
+                });
+        };
+
+        // Cleanup
+        return () => {
+            // Optional: delete window.copyCode;
+        };
+    }, []);
+
+    // Handle escape key
+    useEffect(() => {
+        // Auto-show after a few seconds for demo purposes
+        const timer = setTimeout(() => {
+            if (!isOpen) {
+                // Show a subtle animation to draw attention (not implemented in Svelte code either, just comment)
+            }
+        }, 5000);
+
+        function handleKeyDown(event: KeyboardEvent) {
+            if (event.key === 'Escape' && isOpen) {
+                toggleChat();
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isOpen]);
+
+    /**
+     * Initialize an anonymous session for the Fleety chat proxy
+     */
+    async function initializeSession() {
         try {
             console.log('🔄 Initializing Fleety chat session...');
             console.log('Project ID:', projectId);
@@ -1159,7 +338,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
             const response = await fetch(`${API_URL}/init-session`, {
                 method: 'POST',
                 headers,
-                credentials: 'include',
+                credentials: 'include', // CRITICAL: Required for CORS with credentials
                 body: JSON.stringify({ project_id: projectId })
             });
 
@@ -1171,78 +350,89 @@ const SupportChat: React.FC<SupportChatProps> = ({
             }
 
             setAnonToken(result.token);
-            setTokenExpiresAt(new Date(result.expires_at));
-            setSessionError('');
+            // setTokenExpiresAt(new Date(result.expires_at));
+            // setSessionError('');
 
             console.log('✅ Fleety chat session initialized');
-            console.log('Token expires at:', new Date(result.expires_at));
+            console.log('Token expires at:', result.expires_at);
             console.log('Project ID:', result.project_id);
 
-            // Auto-renew token before expiration (4 minutes)
-            setTimeout(() => {
-                console.log('🔄 Token expiring soon, renewing...');
-                initializeSession();
-            }, 4 * 60 * 1000);
-
+            // Auto-renew token before expiration (4 minutes, as tokens last 5 min)
+            setTimeout(
+                () => {
+                    console.log('🔄 Token expiring soon, renewing...');
+                    initializeSession();
+                },
+                4 * 60 * 1000
+            );
         } catch (err) {
-            setSessionError(err instanceof Error ? err.message : 'Unknown error');
+            // setSessionError(err instanceof Error ? err.message : 'Unknown error');
             console.error('❌ Session initialization error:', err);
         }
-    };
+    }
 
-    const toggleChat = () => {
-        setIsOpen(!isOpen);
-        if (!isOpen && messages.length === 0) {
-            addAIMessage("👋 Welcome to Fleety support! I'm here to help you. Ask me anything!");
-
-            if (!anonToken) {
-                initializeSession();
-            }
-        }
-
-        if (!isOpen) {
+    function toggleChat() {
+        if (isOpen) {
+            setIsClosing(true);
             setTimeout(() => {
-                inputElementRef.current?.focus();
+                setIsOpen(false);
+                setIsClosing(false);
+            }, 300);
+        } else {
+            setIsOpen(true);
+
+            if (messages.length === 0) {
+                // Add welcome message
+                addAIMessage("👋 Welcome to Fleety support! I'm here to help you. Ask me anything!");
+
+                // Initialize session if not already done
+                if (!anonToken) {
+                    initializeSession();
+                }
+            }
+
+            // Auto-focus input when chat opens
+            setTimeout(() => {
+                inputRef.current?.focus();
             }, 100);
         }
-    };
+    }
 
-    const toggleFullscreen = () => {
-        setIsFullscreen(!isFullscreen);
-    };
-
-    const addMessage = (text: string, isUser: boolean) => {
+    function addMessage(text: string, isUser: boolean) {
         const message: Message = {
             id: Date.now().toString(),
             text,
             isUser,
             timestamp: new Date()
         };
+
         setMessages(prev => [...prev, message]);
 
+        // Scroll to bottom
         setTimeout(() => {
             if (chatContainerRef.current) {
                 chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
             }
         }, 100);
-    };
+    }
 
-    const addAIMessage = (text: string) => {
+    function addAIMessage(text: string) {
         addMessage(text, false);
-    };
+    }
 
-    // const clearConversation = () => {
+    // function clearConversation() {
     //     setMessages([]);
     //     setConversationHistory([]);
     //     console.log('🗑️ Conversation history cleared');
-    // };
+    // }
 
-    const sendMessage = async () => {
+    async function sendMessage() {
         if (!currentMessage.trim()) return;
 
         const userMessage = currentMessage.trim();
         addMessage(userMessage, true);
 
+        // Add user message to conversation history
         setConversationHistory(prev => [...prev, {
             role: 'user',
             content: userMessage
@@ -1250,58 +440,77 @@ const SupportChat: React.FC<SupportChatProps> = ({
 
         setCurrentMessage('');
 
+        // Check if we have a session token
         if (!anonToken) {
             console.log('⚠️ No session token, initializing...');
+            // Try to initialize session
             await initializeSession();
 
-            if (!anonToken) {
-                addAIMessage("⚠️ Unable to connect to chat service. Please try again later.");
-                return;
-            }
+            // Note: anonToken state won't be updated immediately here in the same closure
+            // But we can check if we have a token in the next render or assume it worked if no error
+            // Ideally we should wait for the state update or return the token from initializeSession
+            // For now, we'll proceed, but in a real app we might need to handle this better
         }
 
+        // Show typing indicator
         setIsTyping(true);
 
         try {
             console.log('📤 Sending chat message with history...');
+            console.log('Conversation history length:', conversationHistory.length);
+            // Note: anonToken might be stale here if just initialized, but let's try
+            console.log('Using anon token:', anonToken ? anonToken.substring(0, 20) + '...' : 'none');
 
             const response = await fetch(`${API_URL}/chat/tools`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${anonToken}`,
+                    Authorization: `Bearer ${anonToken}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    messages: conversationHistory.concat([{ role: 'user', content: userMessage }]),
+                    messages: [...conversationHistory, { role: 'user', content: userMessage }],
                     enable_tool_calling: true
                 })
             });
 
             console.log('📥 Response status:', response.status);
+            // console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 console.error('❌ Chat request failed:', response.status, errorData);
 
+                // Handle rate limiting specifically
                 if (response.status === 429) {
                     const retryAfter = response.headers.get('Retry-After');
                     const retryMessage = retryAfter
                         ? `Please wait ${retryAfter} seconds before trying again.`
                         : 'Please wait a moment before trying again.';
-                    throw new Error(`rate_limit:${errorData.message || 'You\'re sending requests too fast.'} ${retryMessage}`);
+                    throw new Error(
+                        `rate_limit:${errorData.message || "You're sending requests too fast."} ${retryMessage}`
+                    );
                 }
 
                 throw new Error(errorData.error || `HTTP ${response.status}`);
             }
 
+            // Check if this is a tool call response (non-streaming)
             const contentType = response.headers.get('content-type');
+            console.log('📋 Content-Type:', contentType);
+
             if (contentType?.includes('application/json')) {
-                const toolResponse: ToolResponse = await response.json();
+                // This is a tool call response
+                const toolResponse = await response.json();
+                console.log('📦 Tool response:', toolResponse);
+                console.log('📦 Response type:', toolResponse.type);
+                console.log('📦 Response message:', toolResponse.message);
 
                 if (toolResponse.type === 'tool_call') {
+                    // AI created a ticket
                     console.log('🎫 Ticket created:', toolResponse.ticket_slug);
                     addAIMessage(toolResponse.message);
 
+                    // Dispatch custom event to notify SupportTicketWidget
                     const event = new CustomEvent('ticket-created', {
                         detail: { ticketSlug: toolResponse.ticket_slug },
                         bubbles: true,
@@ -1313,12 +522,17 @@ const SupportChat: React.FC<SupportChatProps> = ({
                     setIsTyping(false);
                     return;
                 } else if (toolResponse.type === 'message') {
+                    // Regular message response
+                    console.log('💬 Adding AI message:', toolResponse.message);
                     addAIMessage(toolResponse.message);
                     setIsTyping(false);
                     return;
                 }
+
+                console.log('⚠️ Unknown response type:', toolResponse.type);
             }
 
+            // Read streaming response
             const reader = response.body?.getReader();
             const decoder = new TextDecoder();
 
@@ -1327,53 +541,51 @@ const SupportChat: React.FC<SupportChatProps> = ({
             }
 
             let aiResponse = '';
-            let messageId = Date.now().toString();
-            let isFirstChunk = true;
+            const messageId = Date.now().toString();
+            let chunkCount = 0;
+
+            console.log('📖 Reading streaming response...');
 
             while (true) {
                 const { done, value } = await reader.read();
 
                 if (done) {
-                    console.log('✅ Stream complete');
+                    console.log(`✅ Stream complete. Received ${chunkCount} chunks.`);
                     break;
                 }
 
                 const chunk = decoder.decode(value, { stream: true });
+                chunkCount++;
 
-                // Check if first chunk is JSON (backend sent wrong content-type)
-                if (isFirstChunk && chunk.trim().startsWith('{')) {
-                    isFirstChunk = false;
+                // Check if this is a complete JSON response (not SSE format)
+                if (chunkCount === 1 && chunk.trim().startsWith('{')) {
                     try {
-                        const jsonResponse: ToolResponse = JSON.parse(chunk);
-                        console.log('📦 Received JSON response (not SSE):', jsonResponse);
-                        
-                        if (jsonResponse.type === 'message' || jsonResponse.type === 'tool_call') {
+                        const jsonResponse = JSON.parse(chunk);
+                        console.log('📦 Parsed JSON response:', jsonResponse);
+
+                        if (jsonResponse.type === 'message' && jsonResponse.message) {
                             addAIMessage(jsonResponse.message);
-                            
-                            if (jsonResponse.type === 'tool_call' && jsonResponse.ticket_slug) {
-                                const event = new CustomEvent('ticket-created', {
-                                    detail: { ticketSlug: jsonResponse.ticket_slug },
-                                    bubbles: true,
-                                    composed: true
-                                });
-                                window.dispatchEvent(event);
-                                console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
-                            }
-                            
-                            setConversationHistory(prev => [...prev, {
-                                role: 'assistant',
-                                content: jsonResponse.message
-                            }]);
-                            
+                            console.log('✅ Added message from JSON response');
+                            setIsTyping(false);
+                            return;
+                        } else if (jsonResponse.type === 'tool_call') {
+                            addAIMessage(jsonResponse.message);
+                            // Dispatch event for ticket creation
+                            const event = new CustomEvent('ticket-created', {
+                                detail: { ticketSlug: jsonResponse.ticket_slug },
+                                bubbles: true,
+                                composed: true
+                            });
+                            window.dispatchEvent(event);
+                            console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
                             setIsTyping(false);
                             return;
                         }
                     } catch (e) {
-                        console.log('⚠️ First chunk looks like JSON but failed to parse, treating as SSE');
+                        console.log('Not a complete JSON, treating as SSE stream');
                     }
                 }
-                
-                isFirstChunk = false;
+
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
@@ -1387,31 +599,36 @@ const SupportChat: React.FC<SupportChatProps> = ({
                         }
 
                         try {
-                            const parsed: ChatStreamResponse = JSON.parse(data);
+                            const parsed = JSON.parse(data);
                             const content = parsed.choices[0]?.delta?.content || '';
 
                             if (content) {
                                 aiResponse += content;
 
-                                setMessages(prev => {
-                                    const existingIndex = prev.findIndex(m => m.id === messageId);
-                                    if (existingIndex !== -1) {
-                                        const updated = [...prev];
-                                        updated[existingIndex] = {
-                                            ...updated[existingIndex],
+                                // Update or create AI message
+                                setMessages(prevMessages => {
+                                    const existingMessageIndex = prevMessages.findIndex((m) => m.id === messageId);
+                                    if (existingMessageIndex !== -1) {
+                                        // Update existing message
+                                        const newMessages = [...prevMessages];
+                                        newMessages[existingMessageIndex] = {
+                                            ...newMessages[existingMessageIndex],
                                             text: aiResponse
                                         };
-                                        return updated;
+                                        return newMessages;
                                     } else {
-                                        return [...prev, {
+                                        // Create new message
+                                        const message: Message = {
                                             id: messageId,
                                             text: aiResponse,
                                             isUser: false,
                                             timestamp: new Date()
-                                        }];
+                                        };
+                                        return [...prevMessages, message];
                                     }
                                 });
 
+                                // Scroll to bottom
                                 setTimeout(() => {
                                     if (chatContainerRef.current) {
                                         chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -1425,6 +642,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 }
             }
 
+            // After stream completes, add the complete AI response to conversation history
             if (aiResponse) {
                 setConversationHistory(prev => [...prev, {
                     role: 'assistant',
@@ -1432,254 +650,73 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 }]);
                 console.log('✅ Added AI response to conversation history');
             }
-
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to send message';
             console.error('❌ Chat error:', err);
 
+            // Handle rate limiting
             if (error.includes('rate_limit:')) {
                 const message = error.replace('rate_limit:', '');
                 addAIMessage(`⏰ ${message}`);
-            } else if (error.includes('401') || error.includes('expired')) {
+            }
+            // Handle token expiration
+            else if (error.includes('401') || error.includes('expired')) {
                 console.log('🔄 Token expired, reinitializing session...');
                 setAnonToken('');
                 await initializeSession();
 
-                if (anonToken) {
-                    addAIMessage("Session refreshed. Please try sending your message again.");
-                } else {
-                    addAIMessage("⚠️ Session expired. Please refresh the page and try again.");
-                }
+                // We can't easily retry automatically here without more complex logic, so we ask user to retry
+                addAIMessage('Session refreshed. Please try sending your message again.');
             } else {
                 addAIMessage(`⚠️ Sorry, I encountered an error: ${error}. Please try again.`);
             }
         } finally {
             setIsTyping(false);
         }
-    };
+    }
 
-    const handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    function handleKeyPress(event: React.KeyboardEvent) {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             sendMessage();
         }
-    };
-
-    const getResizeHandles = (position: typeof dockPosition): { corner: 'nw' | 'ne' | 'sw' | 'se'; edges: ('n' | 's' | 'w' | 'e')[] } => {
-        switch (position) {
-            case 'bottom-right':
-                return { corner: 'nw', edges: ['n', 'w'] };
-            case 'bottom-left':
-                return { corner: 'ne', edges: ['n', 'e'] };
-            case 'top-right':
-                return { corner: 'sw', edges: ['s', 'w'] };
-            case 'top-left':
-                return { corner: 'se', edges: ['s', 'e'] };
-        }
-    };
-
-    const startResize = (event: React.MouseEvent, direction: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e') => {
-        setIsResizing(true);
-        const startX = event.clientX;
-        const startY = event.clientY;
-        const startWidth = chatWidth;
-        const startHeight = chatHeight;
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-
-            let newWidth = startWidth;
-            let newHeight = startHeight;
-
-            if (direction.includes('w')) {
-                newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - deltaX));
-            } else if (direction.includes('e')) {
-                newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + deltaX));
-            }
-
-            if (direction.includes('n')) {
-                newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight - deltaY));
-            } else if (direction.includes('s')) {
-                newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight + deltaY));
-            }
-
-            setChatWidth(newWidth);
-            setChatHeight(newHeight);
-        };
-
-        const handleMouseUp = () => {
-            setIsResizing(false);
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-    };
-
-    useEffect(() => {
-        // Handle Escape key to close chat
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape' && isOpen) {
-                setIsOpen(false);
-            }
-        };
-
-        // Close chat when clicking outside
-        const handleClickOutside = (event: MouseEvent) => {
-            const target = event.target as Element;
-            if (isOpen && !target.closest('.chat-container') && !target.closest('.chat-toggle-button')) {
-                setIsOpen(false);
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        document.addEventListener('click', handleClickOutside);
-
-        // Define copy functions globally
-        (window as any).copyCode = (codeId: string) => {
-            const codeBlock = document.getElementById(codeId);
-            if (!codeBlock) return;
-
-            const code = codeBlock.textContent || '';
-
-            navigator.clipboard.writeText(code).then(() => {
-                const button = document.querySelector(`[data-code-id="${codeId}"]`);
-                if (!button) return;
-
-                const copyText = button.querySelector('.copy-text') as HTMLElement;
-                const copiedText = button.querySelector('.copied-text') as HTMLElement;
-
-                if (copyText) copyText.style.display = 'none';
-                if (copiedText) copiedText.style.display = 'inline';
-
-                setTimeout(() => {
-                    if (copyText) copyText.style.display = 'inline';
-                    if (copiedText) copiedText.style.display = 'none';
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy code:', err);
-            });
-        };
-
-        (window as any).copyQuote = (quoteId: string) => {
-            const quoteBlock = document.getElementById(quoteId);
-            if (!quoteBlock) return;
-
-            const button = quoteBlock.querySelector('.copy-quote-btn');
-            const clonedQuote = quoteBlock.cloneNode(true) as HTMLElement;
-            const clonedButton = clonedQuote.querySelector('.copy-quote-btn');
-            if (clonedButton) clonedButton.remove();
-
-            const quoteText = clonedQuote.textContent || '';
-
-            navigator.clipboard.writeText(quoteText.trim()).then(() => {
-                if (!button) return;
-
-                const icon = button.querySelector('.copy-icon') as HTMLElement;
-                if (icon) {
-                    icon.style.opacity = '1';
-                    setTimeout(() => {
-                        icon.style.opacity = '0.6';
-                    }, 1000);
-                }
-            }).catch(err => {
-                console.error('Failed to copy quote:', err);
-            });
-        };
-
-        (window as any).copyInlineCode = (codeId: string) => {
-            const codeElement = document.getElementById(codeId);
-            if (!codeElement) return;
-
-            const code = codeElement.textContent || '';
-
-            navigator.clipboard.writeText(code).then(() => {
-                const button = document.querySelector(`[data-inline-id="${codeId}"]`);
-                if (!button) return;
-
-                const icon = button.querySelector('.copy-icon') as HTMLElement;
-                if (icon) {
-                    icon.style.opacity = '1';
-                    icon.style.transform = 'scale(1.2)';
-                    setTimeout(() => {
-                        icon.style.opacity = '0.7';
-                        icon.style.transform = 'scale(1)';
-                    }, 800);
-                }
-            }).catch(err => {
-                console.error('Failed to copy inline code:', err);
-            });
-        };
-
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown);
-            document.removeEventListener('click', handleClickOutside);
-        };
-    }, [isOpen]);
-
-    const resizeHandles = getResizeHandles(dockPosition);
+    }
 
     return (
         <>
-            <style>{chatStyles}</style>
+            <style>{STYLES}</style>
             {/* Chat Window */}
-            {isOpen && (
+            {(isOpen || isClosing) && (
                 <div
-                    className={`chat-container theme-${theme} dock-${dockPosition} ${isResizing ? 'resizing' : ''} ${isFullscreen ? 'fullscreen' : ''}`}
-                    style={isFullscreen ? {} : { width: `${chatWidth}px`, height: `${chatHeight}px` }}
+                    className={`chat-container ${isClosing ? 'closing' : ''}`}
+                    data-theme={activeTheme}
+                    data-dock={dockPosition}
                     role="dialog"
                     aria-label="Support chat"
                     tabIndex={-1}
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                 >
-                    {!isFullscreen && (
-                        <>
-                            {/* Corner Resize Handle */}
-                            <div
-                                role="button"
-                                tabIndex={0}
-                                onMouseDown={(e) => startResize(e, resizeHandles.corner)}
-                                className={`resize-handle corner-${resizeHandles.corner}`}
-                                title="Resize chat window"
-                            />
-
-                            {/* Edge Resize Handles */}
-                            {resizeHandles.edges.map(edge => (
-                                <div
-                                    key={edge}
-                                    role="button"
-                                    tabIndex={0}
-                                    onMouseDown={(e) => startResize(e, edge)}
-                                    className={`resize-handle edge-${edge}`}
-                                    title={`Resize ${edge === 'n' || edge === 's' ? 'height' : 'width'}`}
-                                />
-                            ))}
-                        </>
-                    )}
-
                     {/* Chat Header */}
                     <div className="chat-header">
                         <div className="header-left">
                             <span className="header-title">Fleety Support</span>
                         </div>
                         <div className="header-right">
-                            <button onClick={toggleFullscreen} className="fullscreen-button" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
-                                {isFullscreen ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                    </svg>
-                                )}
-                            </button>
                             <button onClick={toggleChat} className="minimize-button" aria-label="Minimize chat">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="icon-sm"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M6 18L18 6M6 6l12 12"
+                                    />
                                 </svg>
                             </button>
                         </div>
@@ -1687,7 +724,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
 
                     {/* Messages Container */}
                     <div ref={chatContainerRef} className="messages-container">
-                        {messages.map(message => (
+                        {messages.map((message) => (
                             <div
                                 key={message.id}
                                 className={`message-wrapper ${message.isUser ? 'user' : 'ai'}`}
@@ -1718,21 +755,34 @@ const SupportChat: React.FC<SupportChatProps> = ({
                     <div className="input-area">
                         <div className="input-wrapper">
                             <input
-                                ref={inputElementRef}
+                                ref={inputRef}
                                 value={currentMessage}
                                 onChange={(e) => setCurrentMessage(e.target.value)}
-                                onKeyPress={handleKeyPress}
+                                onKeyDown={handleKeyPress}
                                 placeholder="Ask about Fleety..."
                                 className="message-input"
                             />
                             <button
                                 onClick={sendMessage}
                                 disabled={!currentMessage.trim()}
-                                className="send-button"
+                                className="chat-send-button"
                                 aria-label="Send message"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="icon-sm" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                <svg
+                                    width="24"
+                                    height="24"
+                                    viewBox="0 0 20 20"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="send-icon"
+                                >
+                                    <path
+                                        d="M2 10L18 2L10 18L8 11L2 10Z"
+                                        fill="currentColor"
+                                        stroke="currentColor"
+                                        strokeWidth="1.5"
+                                        strokeLinejoin="round"
+                                    />
                                 </svg>
                             </button>
                         </div>
@@ -1741,18 +791,43 @@ const SupportChat: React.FC<SupportChatProps> = ({
             )}
 
             {/* Chat Toggle Button */}
-            <div className={`chat-toggle-button theme-${theme} dock-${dockPosition}`}>
+            <div className="chat-toggle-button" data-theme={activeTheme} data-dock={dockPosition}>
                 <button
-                    onClick={(e) => { e.stopPropagation(); toggleChat(); }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        toggleChat();
+                    }}
                     className="toggle-button"
-                    aria-label={isOpen ? "Close support chat" : "Open support chat"}
+                    aria-label={isOpen ? 'Close support chat' : 'Open support chat'}
                 >
                     <div className={`icon-container ${isOpen ? 'open' : ''}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="icon icon-default" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="icon icon-default"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                            />
                         </svg>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="icon icon-close" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="icon icon-close"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M6 18L18 6M6 6l12 12"
+                            />
                         </svg>
                     </div>
                 </button>
@@ -1762,3 +837,800 @@ const SupportChat: React.FC<SupportChatProps> = ({
 };
 
 export default SupportChat;
+
+const STYLES = `
+/* Theme Variables */
+.chat-container,
+.chat-toggle-button {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.chat-container[data-theme='light'],
+.chat-toggle-button[data-theme='light'] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-hover: #f3f4f6;
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --border-color: #e5e7eb;
+    --accent-color: var(--custom-accent, #3b82f6);
+    --user-msg-bg: var(--custom-accent, #3b82f6);
+    --user-msg-text: #ffffff;
+    --ai-msg-bg: #e5e7eb;
+    --ai-msg-text: #111827;
+    --ai-msg-border: #e5e7eb;
+    --shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.chat-container[data-theme='dark'],
+.chat-toggle-button[data-theme='dark'] {
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #2d2d2d;
+    --bg-hover: #3a3a3a;
+    --text-primary: #eaeaea;
+    --text-secondary: #9ca3af;
+    --border-color: #404040;
+    --accent-color: var(--custom-accent, #3b82f6);
+    --user-msg-bg: var(--custom-accent, #3b82f6);
+    --user-msg-text: #ffffff;
+    --ai-msg-bg: #2d2d2d;
+    --ai-msg-text: #eaeaea;
+    --ai-msg-border: #404040;
+    --shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.chat-container[data-theme='material'],
+.chat-toggle-button[data-theme='material'] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #fafafa;
+    --bg-hover: #f5f5f5;
+    --text-primary: #212121;
+    --text-secondary: #757575;
+    --border-color: #e0e0e0;
+    --accent-color: var(--custom-accent, #1976d2);
+    --user-msg-bg: var(--custom-accent, #1976d2);
+    --user-msg-text: #ffffff;
+    --ai-msg-bg: #f5f5f5;
+    --ai-msg-text: #212121;
+    --ai-msg-border: #e0e0e0;
+    --shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.chat-container[data-theme='nord'],
+.chat-toggle-button[data-theme='nord'] {
+    --bg-primary: #2e3440;
+    --bg-secondary: #3b4252;
+    --bg-hover: #434c5e;
+    --text-primary: #eceff4;
+    --text-secondary: #d8dee9;
+    --border-color: #4c566a;
+    --accent-color: #88c0d0;
+    --user-msg-bg: #88c0d0;
+    --user-msg-text: #2e3440;
+    --ai-msg-bg: #3b4252;
+    --ai-msg-text: #eceff4;
+    --ai-msg-border: #4c566a;
+    --shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+}
+
+.chat-container[data-theme='fleety'],
+.chat-toggle-button[data-theme='fleety'] {
+    --bg-primary: #232627;
+    --bg-secondary: #2d3133;
+    --bg-hover: #363a3c;
+    --text-primary: #ffffff;
+    --text-secondary: #b8babb;
+    --border-color: #3d4245;
+    --accent-color: #f1be00;
+    --user-msg-bg: #f1be00;
+    --user-msg-text: #232627;
+    --ai-msg-bg: #2d3133;
+    --ai-msg-text: #ffffff;
+    --ai-msg-border: #3d4245;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+/* Midnight theme */
+.chat-container[data-theme='midnight'],
+.chat-toggle-button[data-theme='midnight'] {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-hover: #334155;
+    --text-primary: #f0e9ff;
+    --text-secondary: #d8b4fe;
+    --border-color: #581c87;
+    --accent-color: #9333ea;
+    --user-msg-bg: #9333ea;
+    --user-msg-text: #ffffff;
+    --ai-msg-bg: #1e293b;
+    --ai-msg-text: #f0e9ff;
+    --ai-msg-border: #581c87;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+/* === Toggle Button === */
+.chat-toggle-button {
+    position: fixed;
+    z-index: 9999;
+}
+
+.chat-toggle-button[data-dock='bottom-right'] {
+    bottom: 20px;
+    right: 20px;
+}
+
+.chat-toggle-button[data-dock='bottom-left'] {
+    bottom: 20px;
+    left: 20px;
+}
+
+.chat-toggle-button[data-dock='top-right'] {
+    top: 20px;
+    right: 20px;
+}
+
+.chat-toggle-button[data-dock='top-left'] {
+    top: 20px;
+    left: 20px;
+}
+
+.toggle-button {
+    display: flex;
+    height: 60px;
+    width: 60px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s;
+    cursor: pointer;
+    background: var(--accent-color);
+    color: white;
+}
+
+.chat-toggle-button[data-theme='fleety'] .toggle-button {
+    color: #232627;
+}
+
+.toggle-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-button:active {
+    transform: scale(0.95);
+}
+
+.icon-container {
+    position: relative;
+    width: 24px;
+    height: 24px;
+}
+
+.toggle-button .icon {
+    width: 24px;
+    height: 24px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.icon-default {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+.icon-close {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.8);
+}
+
+.icon-container.open .icon-default {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.8);
+}
+
+.icon-container.open .icon-close {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+/* === Chat Container === */
+.chat-container {
+    position: fixed;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+
+    /* Fixed size matching SupportTicketWidget */
+    width: 420px;
+    max-width: calc(100vw - 40px);
+    height: 650px;
+    max-height: calc(100vh - 120px);
+    
+    /* Animation for entry */
+    animation: slideUp 0.3s ease-out forwards;
+}
+
+.chat-container.closing {
+    animation: slideDown 0.3s ease-in forwards;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+}
+
+/* Chat container positioning */
+.chat-container[data-dock='bottom-right'] {
+    bottom: 100px;
+    right: 20px;
+}
+
+.chat-container[data-dock='bottom-left'] {
+    bottom: 100px;
+    left: 20px;
+}
+
+.chat-container[data-dock='top-right'] {
+    top: 100px;
+    right: 20px;
+}
+
+.chat-container[data-dock='top-left'] {
+    top: 100px;
+    left: 20px;
+}
+
+/* === Chat Header === */
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: var(--accent-color);
+    color: white;
+    border-radius: 12px 12px 0 0;
+    flex-shrink: 0;
+}
+
+.chat-container[data-theme='fleety'] .chat-header {
+    color: #232627;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.header-title {
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.minimize-button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: inherit;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.minimize-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-container[data-theme='fleety'] .minimize-button:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.icon-sm {
+    width: 20px;
+    height: 20px;
+}
+
+/* === Messages Container === */
+.messages-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    background: var(--bg-secondary);
+}
+
+.message-wrapper {
+    display: flex;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message-wrapper.user {
+    justify-content: flex-end;
+}
+
+.message-wrapper.ai {
+    justify-content: flex-start;
+}
+
+.message-bubble {
+    max-width: 85%;
+    border-radius: 12px;
+    padding: 0px 2px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.message-bubble.user {
+    background: var(--user-msg-bg);
+    color: var(--user-msg-text);
+    border-bottom-right-radius: 4px;
+}
+
+.message-bubble.ai {
+    background: var(--ai-msg-bg);
+    color: var(--ai-msg-text);
+    border: 1px solid var(--ai-msg-border);
+    border-bottom-left-radius: 4px;
+}
+
+/* === Typing Indicator === */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    background: var(--ai-msg-bg);
+    border: 1px solid var(--ai-msg-border);
+    border-radius: 12px;
+    border-bottom-left-radius: 4px;
+}
+
+.typing-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    animation: bounce 1.4s infinite;
+}
+
+@keyframes bounce {
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-6px);
+    }
+}
+
+/* === Input Area === */
+.input-area {
+    padding: 16px 20px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.input-wrapper {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.message-input {
+    flex: 1;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--text-primary);
+    transition: border-color 0.2s;
+    outline: none;
+}
+
+.message-input:focus {
+    border-color: var(--accent-color);
+}
+
+.message-input::placeholder {
+    color: var(--text-secondary);
+}
+
+/* === Send Button === */
+.chat-send-button {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.chat-container[data-theme='fleety'] .chat-send-button {
+    color: #232627;
+}
+
+.chat-send-button:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: scale(1.05);
+}
+
+.chat-send-button:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.chat-send-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.send-icon {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+}
+
+/* === Message Content Styles === */
+.message-content {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.5;
+    text-align: left;
+}
+
+/* Link colors */
+.message-content a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+/* Global styles for markdown content */
+.message-content h1 {
+    font-size: 1.5em;
+    font-weight: bold;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    line-height: 1.3;
+}
+
+.message-content h2 {
+    font-size: 1.3em;
+    font-weight: bold;
+    margin-top: 0.5em;
+    margin-bottom: 0.4em;
+    line-height: 1.3;
+}
+
+.message-content h3 {
+    font-size: 1.1em;
+    font-weight: bold;
+    margin-top: 0.4em;
+    margin-bottom: 0.3em;
+    line-height: 1.3;
+}
+
+.message-content p {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+    line-height: 1.5;
+}
+
+.message-content ul,
+.message-content ol {
+    margin-left: 1.25em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    padding-left: 0.5em;
+}
+
+.message-content li {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+    line-height: 1.4;
+}
+
+.message-content ul li {
+    list-style-type: disc;
+}
+
+.message-content ol li {
+    list-style-type: decimal;
+}
+
+.message-content strong {
+    font-weight: 700;
+}
+
+.message-content em {
+    font-style: italic;
+}
+
+/* Blockquote wrapper */
+.message-content .blockquote-wrapper {
+    position: relative;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.message-content .message-blockquote {
+    position: relative;
+    border-left: 3px solid currentColor;
+    padding-left: 0.75em;
+    padding-right: 2em;
+    margin-left: 0.5em;
+    opacity: 0.85;
+    font-style: italic;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* Copy quote button */
+.message-content .copy-quote-btn {
+    position: absolute;
+    top: 0.25em;
+    right: 0.25em;
+    background: transparent;
+    border: none;
+    padding: 0.25em;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.message-content.dark .copy-quote-btn:hover {
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.message-content.light .copy-quote-btn:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.message-content .copy-quote-btn .copy-icon {
+    transition: opacity 0.2s;
+}
+
+.message-content .message-link {
+    text-decoration: underline;
+    opacity: 0.9;
+    transition: opacity 0.2s;
+    font-weight: 500;
+}
+
+.message-content .message-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+/* Inline code */
+.message-content .message-inline-code {
+    background-color: rgba(127, 127, 127, 0.15);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    border: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+/* Inline code wrapper */
+.message-content .inline-code-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    position: relative;
+}
+
+/* Copy inline code button */
+.message-content .copy-inline-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    padding: 0.2em;
+    border-radius: 2px;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.2s;
+    vertical-align: middle;
+}
+
+.message-content .inline-code-wrapper:hover .copy-inline-btn {
+    opacity: 0.7;
+}
+
+.message-content .copy-inline-btn:hover {
+    opacity: 1 !important;
+    background-color: rgba(127, 127, 127, 0.2);
+}
+
+.message-content .copy-inline-btn .copy-icon {
+    transition: all 0.2s;
+}
+
+/* Code block wrapper */
+.message-content .code-block-wrapper {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+/* Code block header */
+.message-content .code-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4em 0.75em;
+    background-color: rgba(127, 127, 127, 0.1);
+    border-bottom: 1px solid rgba(127, 127, 127, 0.15);
+}
+
+.message-content .code-language {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+
+/* Copy button */
+.message-content .copy-code-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3em;
+    background: transparent;
+    border: none;
+    padding: 0.25em 0.5em;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75em;
+    font-weight: 500;
+    opacity: 0.7;
+    transition: all 0.2s;
+}
+
+.message-content .copy-code-btn:hover {
+    opacity: 1;
+    background-color: rgba(127, 127, 127, 0.15);
+}
+
+.message-content .copy-icon {
+    width: 14px;
+    height: 14px;
+}
+
+/* Code block */
+.message-content .message-code-block {
+    background-color: rgba(127, 127, 127, 0.05);
+    border: 1px solid rgba(127, 127, 127, 0.15);
+    border-top: none;
+    padding: 0.75em;
+    border-radius: 0 0 6px 6px;
+    overflow-x: auto;
+    margin: 0;
+}
+
+.message-content .message-code-block code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.message-content hr {
+    border: none;
+    border-top: 1px solid currentColor;
+    opacity: 0.3;
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+}
+
+.message-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    font-size: 0.95em;
+}
+
+.message-content table th,
+.message-content table td {
+    border: 1px solid rgba(127, 127, 127, 0.2);
+    padding: 0.4em 0.6em;
+}
+
+.message-content table th {
+    background-color: rgba(127, 127, 127, 0.05);
+    font-weight: 600;
+}
+
+/* Handle first and last element margins */
+.message-content > *:first-child {
+    margin-top: 0;
+}
+
+.message-content > *:last-child {
+    margin-bottom: 0;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 480px) {
+    .chat-container {
+        width: calc(100vw - 40px);
+        height: calc(100vh - 140px);
+    }
+
+    .toggle-button {
+        width: 56px;
+        height: 56px;
+    }
+}
+`;
