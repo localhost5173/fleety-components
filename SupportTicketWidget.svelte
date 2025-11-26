@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { marked } from 'marked';
 	import { untrack, onMount } from 'svelte';
+	import { fly } from 'svelte/transition';
 
 	// Props
 	interface Props {
@@ -82,9 +83,9 @@
 
 		const storedTickets = localStorage.getItem(TICKETS_STORAGE_KEY);
 		if (storedTickets) {
-				try {
-					tickets = JSON.parse(storedTickets);
-				} catch (e) {
+			try {
+				tickets = JSON.parse(storedTickets);
+			} catch (e) {
 				console.error('❌ Failed to parse stored tickets:', e);
 			}
 		}
@@ -212,7 +213,7 @@
 			ws = null;
 		}
 
-	const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
+		const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
 
 		try {
 			ws = new WebSocket(wsUrl);
@@ -307,7 +308,8 @@
 					title: newTicketTitle.trim(),
 					description: newTicketDescription.trim()
 				})
-			});			if (!response.ok) {
+			});
+			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({}));
 				const error = errorData.error || `HTTP ${response.status}`;
 
@@ -354,8 +356,8 @@
 		isLoading = true;
 		errorMessage = null;
 
-			try {
-				const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
+		try {
+			const response = await fetch(`${API_BASE}/tickets/${projectId}/${slug}`);
 
 			if (!response.ok) {
 				const errorData = await response.json().catch(() => ({}));
@@ -590,7 +592,7 @@
 
 	// Connect to WebSocket for background ticket updates
 	function connectBackgroundWebSocket(ticketSlug: string) {
-	const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
+		const wsUrl = `${WS_BASE}/tickets/${projectId}/${ticketSlug}/ws`;
 
 		try {
 			const bgWs = new WebSocket(wsUrl);
@@ -787,16 +789,38 @@
 		style={getPositionStyles()}
 	>
 		{#if isOpen}
-			<div class="ticket-window">
+			<div
+				class="ticket-window"
+				in:fly={{ y: 20, duration: 300 }}
+				out:fly={{ y: 20, duration: 200 }}
+			>
 				<!-- Header -->
 				<div class="ticket-header">
 					<div class="header-content">
 						{#if activeView === 'list'}
 							<div class="header-icon">
 								<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-									<path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-									<rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="2"/>
-									<path d="M9 12H15M9 16H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+									<path
+										d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+									/>
+									<rect
+										x="9"
+										y="3"
+										width="6"
+										height="4"
+										rx="1"
+										stroke="currentColor"
+										stroke-width="2"
+									/>
+									<path
+										d="M9 12H15M9 16H15"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+									/>
 								</svg>
 							</div>
 							<div class="header-text">
@@ -867,8 +891,13 @@
 								<div class="rate-limit-notice">
 									<div class="rate-limit-icon">
 										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
-											<path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+											<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+											<path
+												d="M12 7V12L15 15"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+											/>
 										</svg>
 									</div>
 									<div class="rate-limit-text">
@@ -881,8 +910,21 @@
 								<div class="empty-state">
 									<div class="empty-icon">
 										<svg width="48" height="48" viewBox="0 0 24 24" fill="none">
-											<path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-											<rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/>
+											<path
+												d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15"
+												stroke="currentColor"
+												stroke-width="1.5"
+												stroke-linecap="round"
+											/>
+											<rect
+												x="9"
+												y="3"
+												width="6"
+												height="4"
+												rx="1"
+												stroke="currentColor"
+												stroke-width="1.5"
+											/>
 										</svg>
 									</div>
 									<div class="empty-title">No tickets yet</div>
@@ -941,8 +983,13 @@
 								<div class="rate-limit-notice">
 									<div class="rate-limit-icon">
 										<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-											<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
-											<path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+											<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+											<path
+												d="M12 7V12L15 15"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+											/>
 										</svg>
 									</div>
 									<div class="rate-limit-text">
@@ -997,10 +1044,7 @@
 							<div class="messages-section">
 								<div class="messages-container" bind:this={messagesContainer}>
 									<!-- Initial ticket description as first message -->
-									<div
-										class="message"
-										style="align-self: flex-end; align-items: flex-end;"
-									>
+									<div class="message" style="align-self: flex-end; align-items: flex-end;">
 										<div
 											class="message-content"
 											style="background: var(--user-msg-bg); color: var(--user-msg-text); border-bottom-right-radius: 4px;"
@@ -1012,7 +1056,7 @@
 											<span class="message-author">You</span>
 										</div>
 									</div>
-									
+
 									<!-- Subsequent messages -->
 									{#each selectedTicket.messages as message (message.id)}
 										<div
@@ -1058,8 +1102,13 @@
 										<div class="rate-limit-notice-inline">
 											<span class="rate-limit-icon-small">
 												<svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-													<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
-													<path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+													<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+													<path
+														d="M12 7V12L15 15"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+													/>
 												</svg>
 											</span>
 											<span>{rateLimitMessage}</span>
@@ -1108,19 +1157,10 @@
 		{/if}
 
 		<!-- Floating Button -->
-		<button class="ticket-toggle-button" onclick={toggleWidget} aria-label="Toggle tickets">
-			{#if isOpen}
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-					<path
-						d="M19 9L12 16L5 9"
-						stroke="currentColor"
-						stroke-width="2.5"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-			{:else}
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+		<button class="ticket-toggle-button" onclick={toggleWidget} aria-label={isOpen ? "Close tickets" : "Open tickets"}>
+			<div class="icon-container" class:open={isOpen}>
+				<!-- Default Icon (Ticket) -->
+				<svg class="icon icon-default" width="24" height="24" viewBox="0 0 24 24" fill="none">
 					<path
 						d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 6.10457 9.89543 7 11 7H13C14.1046 7 15 6.10457 15 5M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5M9 12H15M9 16H13"
 						stroke="currentColor"
@@ -1129,7 +1169,16 @@
 						stroke-linejoin="round"
 					/>
 				</svg>
-			{/if}
+				<!-- Close Icon (Cross) -->
+				<svg class="icon icon-close" width="24" height="24" viewBox="0 0 20 20" fill="none">
+					<path
+						d="M15 5L5 15M5 5L15 15"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+					/>
+				</svg>
+			</div>
 			{#if tickets.some((t) => getUnreadCount(t) > 0)}
 				<span class="notification-dot"></span>
 			{/if}
@@ -1269,7 +1318,6 @@
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
-		animation: slideUp 0.3s ease-out;
 	}
 
 	/* Position based on dock */
@@ -1299,17 +1347,6 @@
 		left: 0;
 		bottom: auto;
 		right: auto;
-	}
-
-	@keyframes slideUp {
-		from {
-			opacity: 0;
-			transform: translateY(20px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
 	}
 
 	/* Header */
@@ -2075,5 +2112,41 @@
 			width: 56px;
 			height: 56px;
 		}
+	}
+
+	/* Icon Animation */
+	.icon-container {
+		position: relative;
+		width: 24px;
+		height: 24px;
+	}
+
+	.ticket-toggle-button .icon {
+		width: 24px;
+		height: 24px;
+		position: absolute;
+		top: 0;
+		left: 0;
+		transition: opacity 0.3s ease, transform 0.3s ease;
+	}
+
+	.icon-default {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
+	}
+
+	.icon-close {
+		opacity: 0;
+		transform: rotate(90deg) scale(0.8);
+	}
+
+	.icon-container.open .icon-default {
+		opacity: 0;
+		transform: rotate(-90deg) scale(0.8);
+	}
+
+	.icon-container.open .icon-close {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
 	}
 </style>
