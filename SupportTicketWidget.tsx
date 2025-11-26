@@ -46,6 +46,7 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
     // State
     const [isBrowser, setIsBrowser] = useState<boolean>(typeof window !== 'undefined');
     const [isOpen, setIsOpen] = useState<boolean>(false);
+    const [isClosing, setIsClosing] = useState<boolean>(false);
     const [activeView, setActiveView] = useState<'list' | 'create' | 'view'>('list'); // 'list' | 'create' | 'view'
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
@@ -721,19 +722,23 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
 
     // Toggle widget
     const toggleWidget = () => {
-        const newIsOpen = !isOpen;
-        setIsOpen(newIsOpen);
-        if (newIsOpen) {
+        if (isOpen) {
+            setIsClosing(true);
+            setTimeout(() => {
+                setIsOpen(false);
+                setIsClosing(false);
+                // Close WebSocket when closing widget
+                if (wsRef.current) {
+                    wsRef.current.close();
+                    wsRef.current = null;
+                }
+                setActiveView('list');
+                setSelectedTicket(null);
+            }, 300);
+        } else {
+            setIsOpen(true);
             // Connect WebSocket for all tickets when opening
             connectAllTicketWebSockets();
-        } else {
-            // Close WebSocket when closing widget
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
-            setActiveView('list');
-            setSelectedTicket(null);
         }
     };
 
@@ -831,8 +836,8 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
                 data-dock={dockPosition}
                 style={getPositionStyles()}
             >
-                {isOpen && (
-                    <div className="ticket-window">
+                {(isOpen || isClosing) && (
+                    <div className={`ticket-window ${isClosing ? 'closing' : ''}`}>
                         {/* Header */}
                         <div className="ticket-header">
                             <div className="header-content">
@@ -895,12 +900,19 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
                                 ) : null}
                             </div>
                             <button className="close-button" onClick={toggleWidget} aria-label="Close tickets">
-                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="20"
+                                    height="20"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
                                     <path
-                                        d="M15 5L5 15M5 5L15 15"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
                                         strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M6 18L18 6M6 6l12 12"
                                     />
                                 </svg>
                             </button>
@@ -1131,7 +1143,7 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
                                                     aria-label="Send message"
                                                     title={isRateLimited ? 'Rate limited' : 'Send message'}
                                                 >
-                                                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                                    <svg width="24" height="24" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="send-icon">
                                                         <path
                                                             d="M2 10L18 2L10 18L8 11L2 10Z"
                                                             fill="currentColor"
@@ -1156,18 +1168,14 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
 
                 {/* Floating Button */}
                 <button className="ticket-toggle-button" onClick={toggleWidget} aria-label="Toggle tickets">
-                    {isOpen ? (
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                            <path
-                                d="M19 9L12 16L5 9"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        </svg>
-                    ) : (
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <div className={`icon-container ${isOpen ? 'open' : ''}`}>
+                        <svg
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            className="icon icon-default"
+                        >
                             <path
                                 d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 6.10457 9.89543 7 11 7H13C14.1046 7 15 6.10457 15 5M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5M9 12H15M9 16H13"
                                 stroke="currentColor"
@@ -1176,7 +1184,23 @@ const SupportTicketWidget: React.FC<SupportTicketWidgetProps> = ({
                                 strokeLinejoin="round"
                             />
                         </svg>
-                    )}
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            className="icon icon-close"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M6 18L18 6M6 6l12 12"
+                            />
+                        </svg>
+                    </div>
                     {tickets.some((t) => getUnreadCount(t) > 0) && (
                         <span className="notification-dot"></span>
                     )}
@@ -1321,6 +1345,10 @@ const STYLES = `
         animation: slideUp 0.3s ease-out;
     }
 
+    .ticket-window.closing {
+        animation: slideDown 0.3s ease-in forwards;
+    }
+
     /* Position based on dock */
     .ticket-widget-container[data-dock='bottom-right'] .ticket-window {
         bottom: 80px;
@@ -1358,6 +1386,17 @@ const STYLES = `
         to {
             opacity: 1;
             transform: translateY(0);
+        }
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        to {
+            opacity: 0;
+            transform: translateY(20px);
         }
     }
 
@@ -1931,6 +1970,13 @@ const STYLES = `
         cursor: not-allowed;
     }
 
+    .send-icon {
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        min-height: 20px;
+    }
+
     .ticket-closed-notice {
         padding: 16px;
         text-align: center;
@@ -2036,6 +2082,42 @@ const STYLES = `
     .rate-limit-cooldown-small {
         font-weight: 600;
         margin-left: auto;
+    }
+
+    /* Icon Animation */
+    .icon-container {
+        position: relative;
+        width: 24px;
+        height: 24px;
+    }
+
+    .ticket-toggle-button .icon {
+        width: 24px;
+        height: 24px;
+        position: absolute;
+        top: 0;
+        left: 0;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .icon-default {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+    }
+
+    .icon-close {
+        opacity: 0;
+        transform: rotate(90deg) scale(0.8);
+    }
+
+    .icon-container.open .icon-default {
+        opacity: 0;
+        transform: rotate(-90deg) scale(0.8);
+    }
+
+    .icon-container.open .icon-close {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
     }
 
     /* Toggle Button */
