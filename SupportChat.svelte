@@ -552,21 +552,8 @@
 			}
 		}
 
-		// Close chat when clicking outside
-		function handleClickOutside(event: MouseEvent) {
-			const target = event.target as Element;
-			if (
-				isOpen &&
-				target &&
-				!target.closest('.chat-container') &&
-				!target.closest('.chat-toggle-button')
-			) {
-				isOpen = false;
-			}
-		}
-
 		document.addEventListener('keydown', handleKeyDown);
-		document.addEventListener('click', handleClickOutside);
+
 
 		// --- Start of inlined onMount logic from MessageContent ---
 		// Define the copy function globally so it's accessible from the HTML
@@ -668,7 +655,6 @@
 
 		return () => {
 			document.removeEventListener('keydown', handleKeyDown);
-			document.removeEventListener('click', handleClickOutside);
 		};
 	});
 </script>
@@ -694,18 +680,12 @@
 			</div>
 			<div class="header-right">
 				<button onclick={toggleChat} class="minimize-button" aria-label="Minimize chat">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="icon-sm"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
+					<svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="icon-sm">
 						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
+							d="M15 5L5 15M5 5L15 15"
+							stroke="currentColor"
 							stroke-width="2"
-							d="M19 9l-7 7-7-7"
+							stroke-linecap="round"
 						/>
 					</svg>
 				</button>
