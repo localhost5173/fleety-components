@@ -109,7 +109,7 @@ Each widget connects to Fleety’s proxy for:
 
 ## 💡 Contributing
 
-PRs are welcome — new themes, new frameworks, refactors, whatever strengthens the commons.
+PRs are welcome - new themes, new frameworks, refactors, whatever improves the project.
 Everything stays open, transparent, and friendly for community-driven tooling.
 
 ---
