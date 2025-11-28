@@ -1,99 +1,122 @@
-# Fleety Components
+# Fleety Components (Universal JS Edition)
 
-Fleety Components is a growing collection of **ready-to-use, open-source UI widgets** that integrate seamlessly with [Fleety](https://fleety.dev) — designed to make adding AI-powered support or ticket systems to your product effortless.
+Fleety Components is a growing suite of **open-source UI widgets** you can drop into *any* environment — plain HTML, Svelte, React, Vue, or any other framework.  
+Everything ships as lightweight **Universal JS widgets** that run with a single `<script>` tag.
 
 Currently available:
-- 🟢 `SupportChat.svelte` — real-time AI support chat with streaming responses.
-- 🟢 `SupportTicket.svelte` — full-featured ticket system with message threads and status tracking.
+- 🟢 `SupportChatWidget` — AI-powered support chat (vanilla JS + framework wrappers)
+- 🟢 `SupportTicketWidget` — user-friendly ticket system widget
 
-Coming soon:
-- 🧩 Vue components (`.vue`)
+Framework wrappers included:
+- 🟢 Svelte (`.svelte`)
+- 🟢 React (`.tsx`)
+- 🟢 Vanilla JS (`.js`)
+- 🚧 Vue (`.vue`) coming soon
 
 ---
 
 ## ✨ Features
 
-- Drop-in widgets (just copy & paste)
-- Real-time messaging with streaming OpenAI responses
-- Built-in token/session handling via Fleety proxy
-- Multiple visual themes (`fleety`, `material`, `midnight`)
-- Works with Fleety’s RAG-enabled backend for contextual AI support
+- Works **anywhere** (HTML, SPA frameworks, SSR apps)
+- No build step required for vanilla usage
+- Real-time AI messaging via Fleety backend
+- Multiple themes: `fleety`, `material`, `light`, `dark`, `nord`, `system`
+- Anonymous session handling + secure proxy (no API keys in browser)
+- Fully open-source widgets you can inspect, fork, and self-host
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Using the Universal JS Widgets
 
-### 1. Install dependencies
+### 1. Add script tags (CDN)
 
-```bash
-npm install
+```html
+<script src="https://cdn.jsdelivr.net/gh/localhost5173/fleety-components@main/SupportChatWidget.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/localhost5173/fleety-components@main/SupportTicketWidget.js"></script>
+````
+
+### 2. Initialize your widgets
+
+```html
+<script>
+    new SupportChatWidget({
+        projectId: 'your-project-id',
+        theme: 'fleety',
+        dockPosition: 'bottom-right'
+    });
+
+    new FleetySupportWidget({
+        projectId: 'your-project-id',
+        theme: 'fleety',
+        dockPosition: 'bottom-left'
+    });
+</script>
 ```
 
-### 2. Copy components
+That’s it — no bundler, no framework required.
 
-Copy the component you want into your Svelte app:
+---
 
-```bash
-src/lib/SupportChat.svelte
-src/lib/SupportTicket.svelte
-```
+## 📦 Using in Frameworks
 
-### 3. Add your project ID
-
-Create a project on the [Fleety Dashboard](https://fleety.dev/projects) and copy & paste the project ID into your .env file as
-```bash
-FLEETY_PROJECT_ID=your-project-id
-```
-
-### 3. Use in your app
+### Svelte
 
 ```svelte
 <script>
-  import SupportChat from './lib/SupportChat.svelte';
+  import SupportChatWidget from './lib/SupportChatWidget.svelte';
 </script>
 
-<SupportChat theme="fleety" dockPosition="bottom-right" />
+<SupportChatWidget theme="fleety" dockPosition="bottom-right" />
 ```
 
-Your app will now connect to your [Fleety](https://fleety.dev) backend.
+### React (TSX)
+
+```tsx
+import { SupportChatWidget } from "./SupportChatWidget";
+
+export default function App() {
+  return <SupportChatWidget projectId="your-project-id" theme="fleety" />;
+}
+```
+
+### Vue (coming soon)
+
+Vue components will wrap the same universal JS core.
 
 ---
 
 ## 🧱 Architecture Overview
 
-Each component connects to Fleety’s lightweight API proxy for:
-- Anonymous session initialization
-- Secure JWT token exchange
-- Real-time SSE (Server-Sent Events) for message streaming
+Each widget connects to Fleety’s proxy for:
 
-No API keys exposed in the browser. Everything is proxied safely.
+* Anonymous session creation
+* Secure JWT rotation
+* Real-time streaming (SSE)
+* RAG-enabled contextual responses
 
 ---
 
-## 🛠️ Framework Roadmap
+## 🛠️ Roadmap
 
-| Framework | Status |
-|------------|---------|
-| Svelte     | ✅ Available |
-| React      | ✅ Available |
+| Framework  | Status         |
+| ---------- | -------------- |
+| Vanilla JS | ✅ Available    |
+| Svelte     | ✅ Available    |
+| React      | ✅ Available    |
 | Vue        | 🚧 In progress |
 
 ---
 
 ## 💡 Contributing
 
-Pull requests are welcome!  
-We’re open to new features, design improvements, and additional framework ports.
-
-If you’re adding a new framework version, try to keep parity with the Svelte implementation.
+PRs are welcome — new themes, new frameworks, refactors, whatever strengthens the commons.
+Everything stays open, transparent, and friendly for community-driven tooling.
 
 ---
 
 ## ⚖️ License
 
-MIT License © Fleety 2025  
-You’re free to use, modify, and self-host it however you like.
+MIT License © Fleety 2025
+Fork it, remix it, host it yourself — no corporate gatekeeping.
 
 ---
-
-**Fleety Components** — simple, open, and developer-friendly building blocks for smarter support systems. Learn more at [fleety.dev](https://fleety.dev).
