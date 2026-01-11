@@ -324,8 +324,9 @@ const SupportChat: React.FC<SupportChatProps> = ({
 
     /**
      * Initialize an anonymous session for the Fleety chat proxy
+     * @returns The authentication token or null if initialization fails
      */
-    async function initializeSession() {
+    async function initializeSession(): Promise<string | null> {
         try {
             console.log('🔄 Initializing Fleety chat session...');
             console.log('Project ID:', projectId);
@@ -365,9 +366,12 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 },
                 4 * 60 * 1000
             );
+
+            return result.token;
         } catch (err) {
             // setSessionError(err instanceof Error ? err.message : 'Unknown error');
             console.error('❌ Session initialization error:', err);
+            return null;
         }
     }
 
@@ -441,15 +445,17 @@ const SupportChat: React.FC<SupportChatProps> = ({
         setCurrentMessage('');
 
         // Check if we have a session token
-        if (!anonToken) {
+        let currentToken = anonToken;
+        if (!currentToken) {
             console.log('⚠️ No session token, initializing...');
-            // Try to initialize session
-            await initializeSession();
-
-            // Note: anonToken state won't be updated immediately here in the same closure
-            // But we can check if we have a token in the next render or assume it worked if no error
-            // Ideally we should wait for the state update or return the token from initializeSession
-            // For now, we'll proceed, but in a real app we might need to handle this better
+            // Try to initialize session and get the token directly
+            const newToken = await initializeSession();
+            if (!newToken) {
+                addAIMessage('⚠️ Failed to initialize session. Please try again.');
+                setIsTyping(false);
+                return;
+            }
+            currentToken = newToken;
         }
 
         // Show typing indicator
@@ -458,13 +464,12 @@ const SupportChat: React.FC<SupportChatProps> = ({
         try {
             console.log('📤 Sending chat message with history...');
             console.log('Conversation history length:', conversationHistory.length);
-            // Note: anonToken might be stale here if just initialized, but let's try
-            console.log('Using anon token:', anonToken ? anonToken.substring(0, 20) + '...' : 'none');
+            console.log('Using anon token:', currentToken ? currentToken.substring(0, 20) + '...' : 'none');
 
             const response = await fetch(`${API_URL}/chat/tools`, {
                 method: 'POST',
                 headers: {
-                    Authorization: `Bearer ${anonToken}`,
+                    Authorization: `Bearer ${currentToken}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
