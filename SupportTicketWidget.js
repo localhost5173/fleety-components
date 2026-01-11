@@ -418,7 +418,8 @@
 		flex-shrink: 0;
 	}
 
-	.create-ticket-button {
+	.create-ticket-button,
+	.load-ticket-button {
 		width: 100%;
 		background: var(--accent-color);
 		color: white;
@@ -435,16 +436,25 @@
 		gap: 8px;
 	}
 
+	.load-ticket-button {
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+		margin-top: 8px;
+	}
+
 	.ticket-widget-container[data-theme='fleety'] .create-ticket-button {
 		color: #232627;
 	}
 
-	.create-ticket-button:hover {
+	.create-ticket-button:hover,
+	.load-ticket-button:hover {
 		opacity: 0.9;
 		transform: scale(1.02);
 	}
 
-	.create-ticket-button:active {
+	.create-ticket-button:active,
+	.load-ticket-button:active {
 		transform: scale(0.98);
 	}
 
@@ -535,6 +545,100 @@
 	}
 
 	.submit-button:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	/* Load Ticket Modal */
+	.load-ticket-modal {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10;
+		padding: 20px;
+	}
+
+	.load-ticket-content {
+		background: var(--bg-primary);
+		border-radius: 12px;
+		padding: 24px;
+		max-width: 400px;
+		width: 100%;
+		box-shadow: var(--shadow);
+	}
+
+	.load-ticket-title {
+		font-size: 18px;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 16px;
+	}
+
+	.load-ticket-input {
+		width: 100%;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 10px 12px;
+		font-size: 14px;
+		font-family: inherit;
+		color: var(--text-primary);
+		margin-bottom: 16px;
+		box-sizing: border-box;
+	}
+
+	.load-ticket-input:focus {
+		outline: none;
+		border-color: var(--accent-color);
+	}
+
+	.load-ticket-input::placeholder {
+		color: var(--text-secondary);
+	}
+
+	.load-ticket-actions {
+		display: flex;
+		gap: 8px;
+	}
+
+	.load-ticket-submit,
+	.load-ticket-cancel {
+		flex: 1;
+		border: none;
+		border-radius: 8px;
+		padding: 10px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 0.2s;
+	}
+
+	.load-ticket-submit {
+		background: var(--accent-color);
+		color: white;
+	}
+
+	.ticket-widget-container[data-theme='fleety'] .load-ticket-submit {
+		color: #232627;
+	}
+
+	.load-ticket-cancel {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+	}
+
+	.load-ticket-submit:hover,
+	.load-ticket-cancel:hover {
+		opacity: 0.8;
+	}
+
+	.load-ticket-submit:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}
@@ -1009,6 +1113,7 @@
         empty: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none"><path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/></svg>`,
         create: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4V16M4 10H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
         send: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 10L18 2L10 18L8 11L2 10Z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+        search: `<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="2"/><path d="M12 12L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
         ticket: `<svg class="icon icon-default" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 6.10457 9.89543 7 11 7H13C14.1046 7 15 6.10457 15 5M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5M9 12H15M9 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
         cross: `<svg class="icon icon-close" width="24" height="24" viewBox="0 0 20 20" fill="none"><path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
         rateLimitSmall: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7V12L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
@@ -1038,6 +1143,8 @@
             this.activeTheme = this.theme;
             this.errorMessage = null;
             this.successMessage = null;
+            this.isLoadTicketModalOpen = false;
+            this.loadTicketInput = '';
             
             // WebSocket
             this.ws = null;
@@ -1066,6 +1173,22 @@
             this.loadTicketsFromStorage();
             this.createWidget();
             this.connectAllTicketWebSockets();
+            this.setupEventListeners();
+        }
+
+        setupEventListeners() {
+            // Listen for ticket-created events from chat widget
+            window.addEventListener('ticket-created', (event) => {
+                const ticketSlug = event.detail?.ticketSlug;
+                if (ticketSlug) {
+                    // Open the widget if it's closed
+                    if (!this.isOpen) {
+                        this.isOpen = true;
+                    }
+                    // Load and display the ticket
+                    this.loadTicket(ticketSlug);
+                }
+            });
         }
 
         async loadDependencies() {
@@ -1236,7 +1359,34 @@
                 const createBtn = this.container.querySelector('.create-ticket-button');
                 if (createBtn) createBtn.onclick = () => this.showCreateView();
 
+                const loadTicketBtn = this.container.querySelector('.load-ticket-button');
+                if (loadTicketBtn) loadTicketBtn.onclick = () => this.showLoadTicketModal();
+
+                const loadTicketSubmit = this.container.querySelector('.load-ticket-submit');
+                if (loadTicketSubmit) loadTicketSubmit.onclick = () => this.handleLoadTicketSubmit();
+
+                const loadTicketCancel = this.container.querySelector('.load-ticket-cancel');
+                if (loadTicketCancel) loadTicketCancel.onclick = () => this.hideLoadTicketModal();
+
+                const loadTicketInput = this.container.querySelector('.load-ticket-input');
+                if (loadTicketInput) {
+                    loadTicketInput.oninput = (e) => { 
+                        this.loadTicketInput = e.target.value; 
+                        this.updateLoadTicketButton(); 
+                    };
+                    loadTicketInput.onkeydown = (e) => {
+                        if (e.key === 'Enter' && this.loadTicketInput.trim()) {
+                            this.handleLoadTicketSubmit();
+                        } else if (e.key === 'Escape') {
+                            this.hideLoadTicketModal();
+                        }
+                    };
+                    loadTicketInput.value = this.loadTicketInput;
+                    setTimeout(() => loadTicketInput.focus(), 0);
+                }
+
                 const submitBtn = this.container.querySelector('.submit-button');
+
                 if (submitBtn) submitBtn.onclick = () => this.createTicket();
 
                 const sendBtn = this.container.querySelector('.send-button');
@@ -1336,8 +1486,10 @@
         }
 
         getContentHtml() {
+            let contentHtml = '';
+            
             if (this.activeView === 'list') {
-                return `
+                contentHtml = `
                     <div class="tickets-list">
                         ${this.errorMessage ? `<div class="error-message">${this.errorMessage}</div>` : ''}
                         ${this.isRateLimited && this.rateLimitMessage ? `
@@ -1377,10 +1529,14 @@
                             ${icons.create}
                             Create New Ticket
                         </button>
+                        <button class="load-ticket-button">
+                            ${icons.search}
+                            Load Ticket by ID
+                        </button>
                     </div>
                 `;
             } else if (this.activeView === 'create') {
-                return `
+                contentHtml = `
                     <div class="create-form">
                         ${this.successMessage ? `<div class="success-message">${this.successMessage}</div>` : ''}
                         ${this.errorMessage ? `<div class="error-message">${this.errorMessage}</div>` : ''}
@@ -1408,7 +1564,7 @@
                     </div>
                 `;
             } else if (this.activeView === 'view' && this.selectedTicket) {
-                return `
+                contentHtml = `
                     <div class="ticket-view">
                         <div class="messages-section">
                             <div class="messages-container">
@@ -1457,7 +1613,29 @@
                     </div>
                 `;
             }
-            return '';
+            
+            // Add load ticket modal if shown
+            const modalHtml = this.isLoadTicketModalOpen ? `
+                <div class="load-ticket-modal">
+                    <div class="load-ticket-content">
+                        <div class="load-ticket-title">Load Ticket by ID</div>
+                        <input 
+                            type="text" 
+                            class="load-ticket-input" 
+                            placeholder="e.g., genius-cobra-286 or #genius-cobra-286"
+                            ${this.isLoading ? 'disabled' : ''}
+                        />
+                        <div class="load-ticket-actions">
+                            <button class="load-ticket-cancel">Cancel</button>
+                            <button class="load-ticket-submit" ${!this.loadTicketInput.trim() || this.isLoading ? 'disabled' : ''}>
+                                ${this.isLoading ? 'Loading...' : 'Load Ticket'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ` : '';
+            
+            return contentHtml + modalHtml;
         }
 
         // Logic Methods
@@ -1497,6 +1675,39 @@
             this.errorMessage = null;
             this.successMessage = null;
             this.render();
+        }
+
+        showLoadTicketModal() {
+            this.isLoadTicketModalOpen = true;
+            this.loadTicketInput = '';
+            this.render();
+        }
+
+        hideLoadTicketModal() {
+            this.isLoadTicketModalOpen = false;
+            this.loadTicketInput = '';
+            this.errorMessage = null;
+            this.render();
+        }
+
+        updateLoadTicketButton() {
+            const btn = this.container.querySelector('.load-ticket-submit');
+            if (btn) {
+                btn.disabled = !this.loadTicketInput.trim() || this.isLoading;
+            }
+        }
+
+        async handleLoadTicketSubmit() {
+            if (!this.loadTicketInput.trim() || this.isLoading) return;
+
+            // Strip the # if present
+            let ticketId = this.loadTicketInput.trim();
+            if (ticketId.startsWith('#')) {
+                ticketId = ticketId.substring(1);
+            }
+
+            this.hideLoadTicketModal();
+            await this.loadTicket(ticketId);
         }
 
         async createTicket() {
