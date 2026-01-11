@@ -56,6 +56,10 @@
 	let successMessage = $state<string | null>(null);
 	let messagesContainer = $state<HTMLDivElement | null>(null);
 
+	// Load ticket modal state
+	let isLoadTicketModalOpen = $state(false);
+	let loadTicketInput = $state('');
+
 	// WebSocket
 	let ws = $state<WebSocket | null>(null);
 	let wsReconnectAttempts = $state(0);
@@ -90,8 +94,26 @@
 			}
 		}
 
+		// Listen for ticket-created events from chat widget
+		const handleTicketCreated = (event: Event) => {
+			const customEvent = event as CustomEvent<{ ticketSlug: string }>;
+			const ticketSlug = customEvent.detail?.ticketSlug;
+			if (ticketSlug) {
+				console.log('🎫 Received ticket-created event:', ticketSlug);
+				// Open the widget if it's closed
+				if (!isOpen) {
+					isOpen = true;
+				}
+				// Load and display the ticket
+				loadTicket(ticketSlug);
+			}
+		};
+
+		window.addEventListener('ticket-created', handleTicketCreated);
+
 		// Cleanup
 		return () => {
+			window.removeEventListener('ticket-created', handleTicketCreated);
 			scrollTimeouts.forEach((timeout) => clearTimeout(timeout));
 			scrollTimeouts = [];
 			if (ws) {
@@ -665,6 +687,33 @@
 		successMessage = null;
 	}
 
+	// Show load ticket modal
+	function showLoadTicketModal() {
+		isLoadTicketModalOpen = true;
+		loadTicketInput = '';
+	}
+
+	// Hide load ticket modal
+	function hideLoadTicketModal() {
+		isLoadTicketModalOpen = false;
+		loadTicketInput = '';
+		errorMessage = null;
+	}
+
+	// Handle load ticket submission
+	async function handleLoadTicketSubmit() {
+		if (!loadTicketInput.trim() || isLoading) return;
+
+		// Strip the # if present
+		let ticketId = loadTicketInput.trim();
+		if (ticketId.startsWith('#')) {
+			ticketId = ticketId.substring(1);
+		}
+
+		hideLoadTicketModal();
+		await loadTicket(ticketId);
+	}
+
 	// Navigate to list view
 	function showListView() {
 		const previousTicketSlug = selectedTicket?.slug;
@@ -969,6 +1018,13 @@
 								</svg>
 								Create New Ticket
 							</button>
+							<button class="load-ticket-button" onclick={showLoadTicketModal}>
+								<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+									<circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="2"/>
+									<path d="M12 12L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+								</svg>
+								Load Ticket by ID
+							</button>
 						</div>
 					{:else if activeView === 'create'}
 						<!-- Create Ticket Form -->
@@ -1153,6 +1209,39 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Load Ticket Modal -->
+				{#if isLoadTicketModalOpen}
+					<div class="load-ticket-modal">
+						<div class="load-ticket-content">
+							<div class="load-ticket-title">Load Ticket by ID</div>
+							<input
+								type="text"
+								class="load-ticket-input"
+								placeholder="e.g., genius-cobra-286 or #genius-cobra-286"
+								bind:value={loadTicketInput}
+								disabled={isLoading}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' && loadTicketInput.trim()) {
+										handleLoadTicketSubmit();
+									} else if (e.key === 'Escape') {
+										hideLoadTicketModal();
+									}
+								}}
+							/>
+							<div class="load-ticket-actions">
+								<button class="load-ticket-cancel" onclick={hideLoadTicketModal}>Cancel</button>
+								<button
+									class="load-ticket-submit"
+									onclick={handleLoadTicketSubmit}
+									disabled={!loadTicketInput.trim() || isLoading}
+								>
+									{isLoading ? 'Loading...' : 'Load Ticket'}
+								</button>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		{/if}
 
@@ -1619,6 +1708,129 @@
 
 	.create-ticket-button:active {
 		transform: scale(0.98);
+	}
+
+	.load-ticket-button {
+		width: 100%;
+		background: var(--bg-primary);
+		color: var(--text-primary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 12px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition:
+			opacity 0.2s,
+			transform 0.1s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		margin-top: 8px;
+	}
+
+	.load-ticket-button:hover {
+		opacity: 0.9;
+		transform: scale(1.02);
+	}
+
+	.load-ticket-button:active {
+		transform: scale(0.98);
+	}
+
+	/* Load Ticket Modal */
+	.load-ticket-modal {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 10;
+		padding: 20px;
+	}
+
+	.load-ticket-content {
+		background: var(--bg-primary);
+		border-radius: 12px;
+		padding: 24px;
+		max-width: 400px;
+		width: 100%;
+		box-shadow: var(--shadow);
+	}
+
+	.load-ticket-title {
+		font-size: 18px;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin-bottom: 16px;
+	}
+
+	.load-ticket-input {
+		width: 100%;
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		padding: 10px 12px;
+		font-size: 14px;
+		font-family: inherit;
+		color: var(--text-primary);
+		margin-bottom: 16px;
+		box-sizing: border-box;
+	}
+
+	.load-ticket-input:focus {
+		outline: none;
+		border-color: var(--accent-color);
+	}
+
+	.load-ticket-input::placeholder {
+		color: var(--text-secondary);
+	}
+
+	.load-ticket-actions {
+		display: flex;
+		gap: 8px;
+	}
+
+	.load-ticket-submit,
+	.load-ticket-cancel {
+		flex: 1;
+		border: none;
+		border-radius: 8px;
+		padding: 10px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 0.2s;
+	}
+
+	.load-ticket-submit {
+		background: var(--accent-color);
+		color: white;
+	}
+
+	.ticket-widget-container[data-theme='fleety'] .load-ticket-submit {
+		color: #232627;
+	}
+
+	.load-ticket-cancel {
+		background: var(--bg-secondary);
+		color: var(--text-primary);
+	}
+
+	.load-ticket-submit:hover,
+	.load-ticket-cancel:hover {
+		opacity: 0.8;
+	}
+
+	.load-ticket-submit:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 
 	/* Create Form */
