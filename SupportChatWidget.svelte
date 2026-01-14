@@ -53,7 +53,23 @@
 	let conversationHistory: ConversationMessage[] = $state([]);
 
 	let isOpen = $state(false);
-	let messages: Array<{ id: string; text: string; isUser: boolean; timestamp: Date }> = $state([]);
+	
+	type SourceCitation = {
+		file_name: string;
+		score: number;
+		section: number;
+		description: string;
+	};
+	
+	type Message = {
+		id: string;
+		text: string;
+		isUser: boolean;
+		timestamp: Date;
+		sources?: SourceCitation[];
+	};
+	
+	let messages: Array<Message> = $state([]);
 	let currentMessage = $state('');
 	let isTyping = $state(false);
 	let chatContainer: HTMLElement = $state()!;
@@ -226,7 +242,7 @@
 		isOpen = !isOpen;
 		if (isOpen && messages.length === 0) {
 			// Add welcome message
-			addAIMessage("👋 Welcome to Fleety support! I'm here to help you. Ask me anything!");
+			addAIMessage("Hey! 👋 Ask me anything about Fleety! Pricing, how it works, ToS, features, setup... I know it all. What's on your mind?");
 
 			// Initialize session if not already done (works for both authenticated and unauthenticated users)
 			if (!anonToken) {
@@ -242,13 +258,16 @@
 		}
 	}
 
-	function addMessage(text: string, isUser: boolean) {
-		const message = {
+	function addMessage(text: string, isUser: boolean, sources: SourceCitation[] = []) {
+		console.log('📝 addMessage called with sources:', sources);
+		const message: Message = {
 			id: Date.now().toString(),
 			text,
 			isUser,
-			timestamp: new Date()
+			timestamp: new Date(),
+			sources: sources.length > 0 ? sources : undefined
 		};
+		console.log('📝 Created message object:', message);
 		messages = [...messages, message];
 
 		// Scroll to bottom
@@ -259,8 +278,8 @@
 		}, 100);
 	}
 
-	function addAIMessage(text: string) {
-		addMessage(text, false);
+	function addAIMessage(text: string, sources: SourceCitation[] = []) {
+		addMessage(text, false, sources);
 	}
 
 	function clearConversation() {
@@ -295,7 +314,7 @@
 				return;
 			}
 		}
-
+  
 		// Show typing indicator
 		isTyping = true;
 
@@ -347,6 +366,7 @@
 				console.log('📦 Tool response:', toolResponse);
 				console.log('📦 Response type:', toolResponse.type);
 				console.log('📦 Response message:', toolResponse.message);
+				console.log('📦 Response sources:', toolResponse.sources);
 
 				if (toolResponse.type === 'tool_call') {
 					// AI created a ticket
@@ -366,8 +386,9 @@
 					return;
 				} else if (toolResponse.type === 'message') {
 					// Regular message response
-					console.log('💬 Adding AI message:', toolResponse.message);
-					addAIMessage(toolResponse.message);
+					const sources = toolResponse.sources || [];
+					console.log('💬 Adding AI message with sources:', sources);
+					addAIMessage(toolResponse.message, sources);
 					console.log('💬 Messages array after add:', messages);
 					isTyping = false;
 					return;
@@ -384,115 +405,138 @@
 				throw new Error('No response body');
 			}
 
-			let aiResponse = '';
-			let messageId = Date.now().toString();
-			let chunkCount = 0;
+		let aiResponse = '';
+		let messageId = Date.now().toString();
+		let chunkCount = 0;
+		let currentSources: SourceCitation[] | undefined = undefined;
 
-			console.log('📖 Reading streaming response...');
-			console.log('Reader:', reader);
-			console.log('Response body locked?:', response.bodyUsed);
+		console.log('📖 Reading streaming response...');
+		console.log('Reader:', reader);
+		console.log('Response body locked?:', response.bodyUsed);
 
-			while (true) {
-				console.log(`⏳ Waiting for chunk ${chunkCount + 1}...`);
-				const { done, value } = await reader.read();
+		while (true) {
+			console.log(`⏳ Waiting for chunk ${chunkCount + 1}...`);
+			const { done, value } = await reader.read();
 
-				console.log(
-					`📦 Chunk ${chunkCount + 1} - done: ${done}, value length: ${value?.length || 0}`
-				);
+			console.log(
+				`📦 Chunk ${chunkCount + 1} - done: ${done}, value length: ${value?.length || 0}`
+			);
 
-				if (done) {
-					console.log(`✅ Stream complete. Received ${chunkCount} chunks.`);
-					break;
-				}
+			if (done) {
+				console.log(`✅ Stream complete. Received ${chunkCount} chunks.`);
+				break;
+			}
 
-				const chunk = decoder.decode(value, { stream: true });
-				chunkCount++;
+			const chunk = decoder.decode(value, { stream: true });
+			chunkCount++;
 
-				console.log(`Chunk ${chunkCount} raw:`, chunk);
+			console.log(`Chunk ${chunkCount} raw:`, chunk);
 
-				// Check if this is a complete JSON response (not SSE format)
-				if (chunkCount === 1 && chunk.trim().startsWith('{')) {
-					try {
-						const jsonResponse = JSON.parse(chunk);
-						console.log('📦 Parsed JSON response:', jsonResponse);
+			// Check if this is a complete JSON response (not SSE format)
+			if (chunkCount === 1 && chunk.trim().startsWith('{')) {
+				try {
+					const jsonResponse = JSON.parse(chunk);
+					console.log('📦 Parsed JSON response:', jsonResponse);
+					console.log('📦 Response type:', jsonResponse.type);
+					console.log('📦 Response sources:', jsonResponse.sources);
+					console.log('📦 Sources array length:', jsonResponse.sources?.length || 0);
 
-						if (jsonResponse.type === 'message' && jsonResponse.message) {
-							addAIMessage(jsonResponse.message);
-							console.log('✅ Added message from JSON response');
-							isTyping = false;
-							return;
-						} else if (jsonResponse.type === 'tool_call') {
-							addAIMessage(jsonResponse.message);
-							// Dispatch event for ticket creation
-							const event = new CustomEvent('ticket-created', {
-								detail: { ticketSlug: jsonResponse.ticket_slug },
-								bubbles: true,
-								composed: true
-							});
-							window.dispatchEvent(event);
-							console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
-							isTyping = false;
-							return;
-						}
-					} catch (e) {
-						console.log('Not a complete JSON, treating as SSE stream');
+					if (jsonResponse.type === 'message' && jsonResponse.message) {
+						const sources = jsonResponse.sources || [];
+						console.log('✅ About to add AI message with sources:', sources);
+						addAIMessage(jsonResponse.message, sources);
+						console.log('✅ Added message from JSON response', sources.length > 0 ? `with ${sources.length} sources` : 'without sources');
+						isTyping = false;
+						return;
+						isTyping = false;
+						return;
+					} else if (jsonResponse.type === 'tool_call') {
+						addAIMessage(jsonResponse.message);
+						// Dispatch event for ticket creation
+						const event = new CustomEvent('ticket-created', {
+							detail: { ticketSlug: jsonResponse.ticket_slug },
+							bubbles: true,
+							composed: true
+						});
+						window.dispatchEvent(event);
+						console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
+						isTyping = false;
+						return;
 					}
-				}
-
-				const lines = chunk.split('\n');
-
-				for (const line of lines) {
-					if (line.startsWith('data: ')) {
-						const data = line.slice(6);
-
-						if (data === '[DONE]') {
-							console.log('✅ Received [DONE] signal');
-							isTyping = false;
-							return;
-						}
-
-						try {
-							const parsed = JSON.parse(data);
-							const content = parsed.choices[0]?.delta?.content || '';
-
-							if (content) {
-								aiResponse += content;
-
-								// Update or create AI message
-								const existingMessageIndex = messages.findIndex((m) => m.id === messageId);
-								if (existingMessageIndex !== -1) {
-									// Update existing message
-									messages[existingMessageIndex] = {
-										...messages[existingMessageIndex],
-										text: aiResponse
-									};
-									messages = [...messages];
-								} else {
-									// Create new message
-									const message = {
-										id: messageId,
-										text: aiResponse,
-										isUser: false,
-										timestamp: new Date()
-									};
-									messages = [...messages, message];
-								}
-
-								// Scroll to bottom
-								setTimeout(() => {
-									if (chatContainer) {
-										chatContainer.scrollTop = chatContainer.scrollHeight;
-									}
-								}, 10);
-							}
-						} catch (e) {
-							// Ignore parse errors for incomplete chunks
-						}
-					}
+				} catch (e) {
+					console.log('Not a complete JSON, treating as SSE stream');
 				}
 			}
 
-			// After stream completes, add the complete AI response to conversation history
+			const lines = chunk.split('\n');
+
+			for (const line of lines) {
+				// Handle SSE event type
+				if (line.startsWith('event: ')) {
+					const eventType = line.slice(7);
+					console.log('📌 SSE Event type:', eventType);
+					continue;
+				}
+				
+				if (line.startsWith('data: ')) {
+					const data = line.slice(6);
+
+					if (data === '[DONE]') {
+						console.log('✅ Received [DONE] signal');
+						isTyping = false;
+						return;
+					}
+
+					try {
+						const parsed = JSON.parse(data);
+						
+						// Check if this is a sources event
+						if (Array.isArray(parsed) && parsed.length > 0 && 'file_name' in parsed[0]) {
+							console.log('📚 Received sources:', parsed);
+							currentSources = parsed;
+							continue;
+						}
+						
+						const content = parsed.choices[0]?.delta?.content || '';
+
+						if (content) {
+							aiResponse += content;
+
+							// Update or create AI message
+							const existingMessageIndex = messages.findIndex((m) => m.id === messageId);
+							if (existingMessageIndex !== -1) {
+								// Update existing message
+								messages[existingMessageIndex] = {
+									...messages[existingMessageIndex],
+									text: aiResponse,
+									sources: currentSources
+								};
+								messages = [...messages];
+							} else {
+								// Create new message
+								const message: Message = {
+									id: messageId,
+									text: aiResponse,
+									isUser: false,
+									timestamp: new Date(),
+									sources: currentSources
+								};
+								messages = [...messages, message];
+							}
+
+							// Scroll to bottom
+							setTimeout(() => {
+								if (chatContainer) {
+									chatContainer.scrollTop = chatContainer.scrollHeight;
+								}
+							}, 10);
+						}
+					} catch (e) {
+						// Ignore parse errors for incomplete chunks
+					}
+				}
+			}
+		}			// After stream completes, add the complete AI response to conversation history
 			if (aiResponse) {
 				conversationHistory.push({
 					role: 'assistant',
@@ -703,6 +747,19 @@
 						<div class="message-content {theme === 'material' ? 'light' : 'dark'}">
 							{@html formatMessageContent(message.text, message.isUser)}
 						</div>
+						{#if message.sources && message.sources.length > 0 && !message.isUser}
+							<div class="source-citation">
+								{#if message.sources.length === 1}
+									<span class="source-label">Source:</span>
+									<span class="source-text">{message.sources[0].description}</span>
+								{:else}
+									<span class="source-label">Sources:</span>
+									<span class="source-text">
+										{message.sources.map((s) => s.description).join(', ')}
+									</span>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</div>
 			{/each}
@@ -1149,6 +1206,24 @@
 		color: var(--ai-msg-text);
 		border: 1px solid var(--ai-msg-border);
 		border-bottom-left-radius: 4px;
+	}
+
+	/* === Source Citation === */
+	.source-citation {
+		background: rgba(0, 0, 0, 0.5);
+		padding: 8px 10px;
+		border-radius: 6px;
+		border: 1px solid rgba(107, 114, 128, 0.5);
+		font-size: 12px;
+		margin-top: 8px;
+	}
+
+	.source-label {
+		color: #9ca3af;
+	}
+
+	.source-text {
+		color: #d1d5db;
 	}
 
 	/* === Typing Indicator === */
