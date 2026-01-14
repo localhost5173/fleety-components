@@ -362,6 +362,23 @@
                     border-bottom-left-radius: 4px;
                 }
 
+                #fleety-chat-widget .source-citation {
+                    background: rgba(0, 0, 0, 0.5);
+                    padding: 8px 10px;
+                    border-radius: 6px;
+                    border: 1px solid rgba(107, 114, 128, 0.5);
+                    font-size: 12px;
+                    margin-top: 8px;
+                }
+
+                #fleety-chat-widget .source-label {
+                    color: #9ca3af;
+                }
+
+                #fleety-chat-widget .source-text {
+                    color: #d1d5db;
+                }
+
                 #fleety-chat-widget .typing-indicator {
                     display: flex;
                     align-items: center;
@@ -727,15 +744,23 @@
             }
         }
 
-        addMessage(text, isUser, id = Date.now().toString()) {
-            const message = { id, text, isUser, timestamp: new Date() };
+        addMessage(text, isUser, id = Date.now().toString(), sources = []) {
+            console.log('📝 addMessage called with sources:', sources);
+            const message = { 
+                id, 
+                text, 
+                isUser, 
+                timestamp: new Date(),
+                sources: sources.length > 0 ? sources : undefined
+            };
+            console.log('📝 Created message object:', message);
             this.messages.push(message);
             this.renderMessage(message);
             this.scrollToBottom();
         }
 
-        addAIMessage(text) {
-            this.addMessage(text, false);
+        addAIMessage(text, sources = []) {
+            this.addMessage(text, false, Date.now().toString(), sources);
         }
 
         renderMessage(message) {
@@ -751,6 +776,22 @@
             content.innerHTML = this.formatMessageContent(message.text, message.isUser);
             
             bubble.appendChild(content);
+            
+            // Add source citations if present and message is from AI
+            if (message.sources && message.sources.length > 0 && !message.isUser) {
+                const sourceCitation = document.createElement('div');
+                sourceCitation.className = 'source-citation';
+                
+                if (message.sources.length === 1) {
+                    sourceCitation.innerHTML = `<span class="source-label">Source:</span> <span class="source-text">${message.sources[0].description}</span>`;
+                } else {
+                    const sourceDescriptions = message.sources.map(s => s.description).join(', ');
+                    sourceCitation.innerHTML = `<span class="source-label">Sources:</span> <span class="source-text">${sourceDescriptions}</span>`;
+                }
+                
+                bubble.appendChild(sourceCitation);
+            }
+            
             wrapper.appendChild(bubble);
             
             // Insert before typing indicator if it exists
@@ -762,14 +803,37 @@
             }
         }
 
-        updateMessage(id, text) {
+        updateMessage(id, text, sources) {
             const messageIndex = this.messages.findIndex(m => m.id === id);
             if (messageIndex !== -1) {
                 this.messages[messageIndex].text = text;
+                if (sources) {
+                    this.messages[messageIndex].sources = sources;
+                }
                 const wrapper = document.getElementById(`msg-${id}`);
                 if (wrapper) {
                     const content = wrapper.querySelector('.message-content');
                     content.innerHTML = this.formatMessageContent(text, false);
+                    
+                    // Update or add source citations
+                    let sourceCitation = wrapper.querySelector('.source-citation');
+                    if (sources && sources.length > 0) {
+                        if (!sourceCitation) {
+                            sourceCitation = document.createElement('div');
+                            sourceCitation.className = 'source-citation';
+                            const bubble = wrapper.querySelector('.message-bubble');
+                            bubble.appendChild(sourceCitation);
+                        }
+                        
+                        if (sources.length === 1) {
+                            sourceCitation.innerHTML = `<span class="source-label">Source:</span> <span class="source-text">${sources[0].description}</span>`;
+                        } else {
+                            const sourceDescriptions = sources.map(s => s.description).join(', ');
+                            sourceCitation.innerHTML = `<span class="source-label">Sources:</span> <span class="source-text">${sourceDescriptions}</span>`;
+                        }
+                    } else if (sourceCitation) {
+                        sourceCitation.remove();
+                    }
                 }
             }
         }
@@ -853,6 +917,9 @@
                 
                 if (contentType?.includes('application/json')) {
                     const toolResponse = await response.json();
+                    console.log('📦 Tool response:', toolResponse);
+                    console.log('📦 Response type:', toolResponse.type);
+                    console.log('📦 Response sources:', toolResponse.sources);
                     this.hideTypingIndicator();
                     
                     if (toolResponse.type === 'tool_call') {
@@ -864,7 +931,10 @@
                         });
                         window.dispatchEvent(event);
                     } else if (toolResponse.type === 'message') {
-                        this.addAIMessage(toolResponse.message);
+                        const sources = toolResponse.sources || [];
+                        console.log('💬 Adding AI message with sources:', sources);
+                        this.addAIMessage(toolResponse.message, sources);
+                        console.log('💬 Messages array after add:', this.messages);
                     }
                     this.isTyping = false;
                     return;
@@ -876,6 +946,7 @@
                 let aiResponse = '';
                 let messageId = Date.now().toString();
                 let isFirstChunk = true;
+                let currentSources = undefined;
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -887,24 +958,63 @@
                     if (isFirstChunk && chunk.trim().startsWith('{')) {
                         try {
                             const jsonResponse = JSON.parse(chunk);
+                            console.log('📦 Parsed JSON response:', jsonResponse);
+                            console.log('📦 Response type:', jsonResponse.type);
+                            console.log('📦 Response sources:', jsonResponse.sources);
+                            console.log('📦 Sources array length:', jsonResponse.sources?.length || 0);
                             this.hideTypingIndicator();
                             if (jsonResponse.type === 'message') {
+                                const sources = jsonResponse.sources || [];
+                                console.log('✅ About to add AI message with sources:', sources);
+                                this.addAIMessage(jsonResponse.message, sources);
+                                console.log('✅ Added message from JSON response', sources.length > 0 ? `with ${sources.length} sources` : 'without sources');
+                                this.isTyping = false;
+                                return;
+                            } else if (jsonResponse.type === 'tool_call') {
                                 this.addAIMessage(jsonResponse.message);
+                                const event = new CustomEvent('ticket-created', {
+                                    detail: { ticketSlug: jsonResponse.ticket_slug },
+                                    bubbles: true,
+                                    composed: true
+                                });
+                                window.dispatchEvent(event);
+                                console.log('📢 Dispatched ticket-created event:', jsonResponse.ticket_slug);
                                 this.isTyping = false;
                                 return;
                             }
-                        } catch (e) {}
+                        } catch (e) {
+                            console.log('Not a complete JSON, treating as SSE stream');
+                        }
                         isFirstChunk = false;
                     }
 
                     const lines = chunk.split('\n');
                     for (const line of lines) {
+                        // Handle SSE event type
+                        if (line.startsWith('event: ')) {
+                            const eventType = line.slice(7);
+                            console.log('📌 SSE Event type:', eventType);
+                            continue;
+                        }
+                        
                         if (line.startsWith('data: ')) {
                             const data = line.slice(6);
-                            if (data === '[DONE]') break;
+                            if (data === '[DONE]') {
+                                console.log('✅ Received [DONE] signal');
+                                this.isTyping = false;
+                                return;
+                            }
 
                             try {
                                 const parsed = JSON.parse(data);
+                                
+                                // Check if this is a sources event
+                                if (Array.isArray(parsed) && parsed.length > 0 && 'file_name' in parsed[0]) {
+                                    console.log('📚 Received sources:', parsed);
+                                    currentSources = parsed;
+                                    continue;
+                                }
+                                
                                 const content = parsed.choices[0]?.delta?.content || '';
                                 
                                 if (content) {
@@ -914,7 +1024,7 @@
                                         isFirstChunk = false;
                                     }
                                     aiResponse += content;
-                                    this.updateMessage(messageId, aiResponse);
+                                    this.updateMessage(messageId, aiResponse, currentSources);
                                     this.scrollToBottom();
                                 }
                             } catch (e) {}
