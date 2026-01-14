@@ -16,11 +16,19 @@ interface ConversationMessage {
     content: string;
 }
 
+interface SourceCitation {
+    file_name: string;
+    score: number;
+    section: number;
+    description: string;
+}
+
 interface Message {
     id: string;
     text: string;
     isUser: boolean;
     timestamp: Date;
+    sources?: SourceCitation[];
 }
 
 // Extend Window interface for global copy functions
@@ -402,13 +410,16 @@ const SupportChat: React.FC<SupportChatProps> = ({
         }
     }
 
-    function addMessage(text: string, isUser: boolean) {
+    function addMessage(text: string, isUser: boolean, sources: SourceCitation[] = []) {
+        console.log('📝 addMessage called with sources:', sources);
         const message: Message = {
             id: Date.now().toString(),
             text,
             isUser,
-            timestamp: new Date()
+            timestamp: new Date(),
+            sources: sources.length > 0 ? sources : undefined
         };
+        console.log('📝 Created message object:', message);
 
         setMessages(prev => [...prev, message]);
 
@@ -420,8 +431,8 @@ const SupportChat: React.FC<SupportChatProps> = ({
         }, 100);
     }
 
-    function addAIMessage(text: string) {
-        addMessage(text, false);
+    function addAIMessage(text: string, sources: SourceCitation[] = []) {
+        addMessage(text, false, sources);
     }
 
     // function clearConversation() {
@@ -509,6 +520,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 console.log('📦 Tool response:', toolResponse);
                 console.log('📦 Response type:', toolResponse.type);
                 console.log('📦 Response message:', toolResponse.message);
+                console.log('📦 Response sources:', toolResponse.sources);
 
                 if (toolResponse.type === 'tool_call') {
                     // AI created a ticket
@@ -528,8 +540,10 @@ const SupportChat: React.FC<SupportChatProps> = ({
                     return;
                 } else if (toolResponse.type === 'message') {
                     // Regular message response
-                    console.log('💬 Adding AI message:', toolResponse.message);
-                    addAIMessage(toolResponse.message);
+                    const sources = toolResponse.sources || [];
+                    console.log('💬 Adding AI message with sources:', sources);
+                    addAIMessage(toolResponse.message, sources);
+                    console.log('💬 Messages array after add:', messagesRef.current);
                     setIsTyping(false);
                     return;
                 }
@@ -548,6 +562,7 @@ const SupportChat: React.FC<SupportChatProps> = ({
             let aiResponse = '';
             const messageId = Date.now().toString();
             let chunkCount = 0;
+            let currentSources: SourceCitation[] | undefined = undefined;
 
             console.log('📖 Reading streaming response...');
 
@@ -565,12 +580,17 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 // Check if this is a complete JSON response (not SSE format)
                 if (chunkCount === 1 && chunk.trim().startsWith('{')) {
                     try {
-                        const jsonResponse = JSON.parse(chunk);
+                        const jsonResponse = await JSON.parse(chunk);
                         console.log('📦 Parsed JSON response:', jsonResponse);
+                        console.log('📦 Response type:', jsonResponse.type);
+                        console.log('📦 Response sources:', jsonResponse.sources);
+                        console.log('📦 Sources array length:', jsonResponse.sources?.length || 0);
 
                         if (jsonResponse.type === 'message' && jsonResponse.message) {
-                            addAIMessage(jsonResponse.message);
-                            console.log('✅ Added message from JSON response');
+                            const sources = jsonResponse.sources || [];
+                            console.log('✅ About to add AI message with sources:', sources);
+                            addAIMessage(jsonResponse.message, sources);
+                            console.log('✅ Added message from JSON response', sources.length > 0 ? `with ${sources.length} sources` : 'without sources');
                             setIsTyping(false);
                             return;
                         } else if (jsonResponse.type === 'tool_call') {
@@ -594,6 +614,13 @@ const SupportChat: React.FC<SupportChatProps> = ({
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
+                    // Handle SSE event type
+                    if (line.startsWith('event: ')) {
+                        const eventType = line.slice(7);
+                        console.log('📌 SSE Event type:', eventType);
+                        continue;
+                    }
+                    
                     if (line.startsWith('data: ')) {
                         const data = line.slice(6);
 
@@ -605,6 +632,14 @@ const SupportChat: React.FC<SupportChatProps> = ({
 
                         try {
                             const parsed = JSON.parse(data);
+                            
+                            // Check if this is a sources event
+                            if (Array.isArray(parsed) && parsed.length > 0 && 'file_name' in parsed[0]) {
+                                console.log('📚 Received sources:', parsed);
+                                currentSources = parsed;
+                                continue;
+                            }
+                            
                             const content = parsed.choices[0]?.delta?.content || '';
 
                             if (content) {
@@ -618,7 +653,8 @@ const SupportChat: React.FC<SupportChatProps> = ({
                                         const newMessages = [...prevMessages];
                                         newMessages[existingMessageIndex] = {
                                             ...newMessages[existingMessageIndex],
-                                            text: aiResponse
+                                            text: aiResponse,
+                                            sources: currentSources
                                         };
                                         return newMessages;
                                     } else {
@@ -627,7 +663,8 @@ const SupportChat: React.FC<SupportChatProps> = ({
                                             id: messageId,
                                             text: aiResponse,
                                             isUser: false,
-                                            timestamp: new Date()
+                                            timestamp: new Date(),
+                                            sources: currentSources
                                         };
                                         return [...prevMessages, message];
                                     }
@@ -739,6 +776,23 @@ const SupportChat: React.FC<SupportChatProps> = ({
                                         className={`message-content ${theme === 'material' ? 'light' : 'dark'}`}
                                         dangerouslySetInnerHTML={{ __html: formatMessageContent(message.text, message.isUser) }}
                                     />
+                                    {message.sources && message.sources.length > 0 && !message.isUser && (
+                                        <div className="source-citation">
+                                            {message.sources.length === 1 ? (
+                                                <>
+                                                    <span className="source-label">Source:</span>{' '}
+                                                    <span className="source-text">{message.sources[0].description}</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="source-label">Sources:</span>{' '}
+                                                    <span className="source-text">
+                                                        {message.sources.map(s => s.description).join(', ')}
+                                                    </span>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -1224,6 +1278,25 @@ const STYLES = `
     color: var(--ai-msg-text);
     border: 1px solid var(--ai-msg-border);
     border-bottom-left-radius: 4px;
+}
+
+/* === Source Citation === */
+.source-citation {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(107, 114, 128, 0.5);
+    font-size: 12px;
+    margin-top: 8px;
+    text-align: left;
+}
+
+.source-label {
+    color: #9ca3af;
+}
+
+.source-text {
+    color: #d1d5db;
 }
 
 /* === Typing Indicator === */
